@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>快速数据导入</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .data-input {
+            margin-bottom: 20px;
+        }
+        
+        .data-input label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .data-input input,
+        .data-input textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .data-input textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        
+        .preview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .preview h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        
+        .preview-item {
+            padding: 8px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .preview-item:last-child {
+            border-bottom: none;
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .log {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .log-item {
+            padding: 4px 0;
+            color: #666;
+        }
+        
+        .log-item.success {
+            color: #28a745;
+        }
+        
+        .log-item.error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 快速数据导入</h1>
+        
+        <div class="data-input">
+            <label for="rawData">原始数据（格式：员工，项目，时间，备注）</label>
+            <textarea id="rawData" placeholder="例如：小莹，SSS（260），19:00-20:00，文爷（300），微信群">小莹，SSS（260），19:00-20:00，文爷（300），微信群</textarea>
+        </div>
+        
+        <div class="preview">
+            <h3>解析结果预览：</h3>
+            <div id="previewContent">
+                <div class="preview-item"><strong>员工：</strong> <span id="previewEmployee">小莹</span></div>
+                <div class="preview-item"><strong>项目：</strong> <span id="previewProject">SSS</span></div>
+                <div class="preview-item"><strong>价格：</strong> <span id="previewPrice">260</span></div>
+                <div class="preview-item"><strong>日期：</strong> <span id="previewDate">2026-03-02</span></div>
+                <div class="preview-item"><strong>时间：</strong> <span id="previewTime">19:00-20:00</span></div>
+                <div class="preview-item"><strong>备注：</strong> <span id="previewNotes">文爷（300），微信群</span></div>
+            </div>
+        </div>
+        
+        <div>
+            <button class="btn" onclick="parseData()">解析数据</button>
+            <button class="btn btn-success" onclick="importToMainPage()">导入到排班系统</button>
+            <button class="btn btn-danger" onclick="clearData()">清空</button>
+            <button class="btn" onclick="window.location.href='index.html'">查看结果</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="log" id="log">
+            <div class="log-item">系统就绪，点击"解析数据"开始</div>
+        </div>
+    </div>
+    
+    <script>
+        // 日志函数
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const item = document.createElement('div');
+            item.className = 'log-item ' + type;
+            item.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+            logEl.appendChild(item);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        // 解析数据函数
+        function parseData() {
+            const rawData = document.getElementById('rawData').value.trim();
+            if (!rawData) {
+                showStatus('请输入数据', 'error');
+                return;
+            }
+            
+            log('开始解析数据: ' + rawData, 'info');
+            
+            try {
+                // 解析数据格式：小莹，SSS（260），19:00-20:00，文爷（300），微信群
+                const parts = rawData.split('，');
+                
+                if (parts.length < 3) {
+                    throw new Error('数据格式不正确，至少需要3个部分（员工，项目，时间）');
+                }
+                
+                // 解析员工
+                const employee = parts[0].trim();
+                
+                // 解析项目和价格：SSS（260）
+                const projectPart = parts[1].trim();
+                const projectMatch = projectPart.match(/^([^(]+)\((\d+)\)$/);
+                if (!projectMatch) {
+                    throw new Error('项目格式不正确，应为：项目名（价格）');
+                }
+                const project = projectMatch[1].trim();
+                const price = projectMatch[2].trim();
+                
+                // 解析时间：19:00-20:00
+                const timePart = parts[2].trim();
+                const timeMatch = timePart.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+                if (!timeMatch) {
+                    throw new Error('时间格式不正确，应为：HH:MM-HH:MM');
+                }
+                
+                const startTime = timeMatch[1] + ':' + timeMatch[2];
+                const endTime = timeMatch[3] + ':' + timeMatch[4];
+                
+                // 解析备注（剩余部分）
+                let notes = '';
+                if (parts.length > 3) {
+                    notes = parts.slice(3).join('，').trim();
+                }
+                
+                // 设置日期（默认为今天）
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                const date = `${year}-${month}-${day}`;
+                
+                // 更新预览
+                document.getElementById('previewEmployee').textContent = employee;
+                document.getElementById('previewProject').textContent = project;
+                document.getElementById('previewPrice').textContent = price;
+                document.getElementById('previewDate').textContent = date;
+                document.getElementById('previewTime').textContent = timePart;
+                document.getElementById('previewNotes').textContent = notes;
+                
+                // 保存到全局变量
+                window.parsedData = {
+                    employeeName: employee,
+                    scheduleDate: date,
+                    startTime: startTime,
+                    endTime: endTime,
+                    projectName: project,
+                    price: price,
+                    notes: notes
+                };
+                
+                log('✅ 数据解析成功', 'success');
+                showStatus('数据解析成功，可以导入到排班系统', 'success');
+                
+            } catch (error) {
+                log('❌ 解析失败: ' + error.message, 'error');
+                showStatus('解析失败: ' + error.message, 'error');
+            }
+        }
+        
+        // 导入到主页面
+        function importToMainPage() {
+            if (!window.parsedData) {
+                showStatus('请先解析数据', 'error');
+                return;
+            }
+            
+            log('开始导入数据到排班系统...', 'info');
+            
+            // 打开主页面
+            const mainWindow = window.open('index.html', '_blank');
+            if (!mainWindow) {
+                log('错误：无法打开新窗口，请允许弹出窗口', 'error');
+                showStatus('请允许弹出窗口，然后重试', 'error');
+                return;
+            }
+            
+            // 等待主页面加载
+            setTimeout(() => {
+                try {
+                    const data = window.parsedData;
+                    log(`正在导入：${data.employeeName} ${data.startTime}-${data.endTime}`, 'info');
+                    
+                    // 在主页面设置表单数据
+                    mainWindow.document.getElementById('employeeName').value = data.employeeName;
+                    mainWindow.document.getElementById('scheduleDate').value = data.scheduleDate;
+                    mainWindow.document.getElementById('startTime').value = data.startTime;
+                    mainWindow.document.getElementById('endTime').value = data.endTime;
+                    mainWindow.document.getElementById('projectName').value = data.projectName;
+                    mainWindow.document.getElementById('price').value = data.price;
+                    mainWindow.document.getElementById('notes').value = data.notes;
+                    
+                    // 等待表单更新
+                    setTimeout(() => {
+                        // 触发添加按钮
+                        mainWindow.document.getElementById('addScheduleBtn').click();
+                        
+                        log('✅ 数据导入成功', 'success');
+                        showStatus('数据已成功导入到排班系统', 'success');
+                        
+                        // 提示用户
+                        setTimeout(() => {
+                            alert('✅ 数据导入成功！\n员工：' + data.employeeName + 
+                                  '\n时间：' + data.startTime + '-' + data.endTime + 
+                                  '\n项目：' + data.projectName + '（' + data.price + '）');
+                        }, 500);
+                        
+                    }, 300);
+                    
+                } catch (error) {
+                    log('❌ 导入失败: ' + error.message, 'error');
+                    showStatus('导入失败: ' + error.message, 'error');
+                }
+            }, 3000);
+        }
+        
+        // 清空数据
+        function clearData() {
+            document.getElementById('rawData').value = '';
+            document.getElementById('previewEmployee').textContent = '';
+            document.getElementById('previewProject').textContent = '';
+            document.getElementById('previewPrice').textContent = '';
+            document.getElementById('previewDate').textContent = '';
+            document.getElementById('previewTime').textContent = '';
+            document.getElementById('previewNotes').textContent = '';
+            window.parsedData = null;
+            
+            const logEl = document.getElementById('log');
+            logEl.innerHTML = '<div class="log-item">数据已清空</div>';
+            
+            showStatus('数据已清空', 'success');
+        }
+        
+        // 显示状态
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status status-' + type;
+        }
+        
+        // 页面加载时自动解析示例数据
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(parseData, 500);
+        });
+    </script>
+</body>
+</html>

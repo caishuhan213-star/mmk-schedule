@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>排班展示系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=8">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <!-- Firebase SDK -->
+    
+    <!-- Firebase配置 -->
+    <script>
+        // Firebase配置 - 昨昨天店排班系统
+        const firebaseConfig = {
+            apiKey: "AIzaSyD2hc5qWutucgOcpg02dEsEUXiKFnldt_0",
+            authDomain: "mmk1-4a2b7.firebaseapp.com",
+            projectId: "mmk1-4a2b7",
+            storageBucket: "mmk1-4a2b7.firebasestorage.app",
+            messagingSenderId: "282681938781",
+            appId: "1:282681938781:web:e747384067992fedeb0eb4",
+            measurementId: "G-D4C56586EG"
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航栏 -->
+        <header class="topbar">
+            <div class="topbar-left">
+                <span class="topbar-logo">排班系统</span>
+                <span class="topbar-divider"></span>
+                <span id="storeContextInfo" class="topbar-store-name">店铺加载中...</span>
+            </div>
+            <div class="topbar-right">
+                <span id="syncStatus" class="sync-status">🟡 同步中...</span>
+                <select id="currentStoreSelect" class="store-select-topbar">
+                    <option value="">加载中...</option>
+                </select>
+                <button id="backToStoreCenter" class="btn-topbar" style="display: none;">返回店铺中心</button>
+                <button id="googleLoginBtn" class="btn-topbar" style="display: none;">登录</button>
+                <span id="userInfo" class="topbar-user" style="display: none;"></span>
+                <button id="logoutBtn" class="btn-topbar btn-topbar-ghost" style="display: none;">登出</button>
+            </div>
+        </header>
+
+        <!-- Tab导航 -->
+        <nav class="tab-navigation">
+            <button class="tab-btn" data-tab="data-convert">数据转化</button>
+            <button class="tab-btn active" data-tab="schedule">排班管理</button>
+            <button class="tab-btn" data-tab="management">数据管理</button>
+            <button class="tab-btn" data-tab="rebate">报告返现</button>
+            <button class="tab-btn" data-tab="charts">数据图表</button>
+            <button class="tab-btn" data-tab="operating-cost">运营成本</button>
+            <button class="tab-btn" data-tab="ai-analysis">🤖 AI 分析</button>
+            <button class="tab-btn" data-tab="store-center">店铺中心</button>
+        </nav>
+
+        <!-- 排班管理页面 -->
+        <div id="schedule-tab" class="tab-content active">
+            <div class="main-content">
+                <!-- 左侧列 -->
+                <div class="left-column">
+                    <!-- 数据录入区域 -->
+                    <section class="input-section collapsible-section" id="section-input">
+                <div class="collapsible-header" data-section="section-input">
+                    <h2>添加排班记录</h2>
+                    <span class="collapse-arrow">▾</span>
+                </div>
+                <div class="section-body">
+                <form id="scheduleForm" class="form">
+                    <div class="form-group">
+                        <label for="employeeName">员工姓名</label>
+                        <select id="employeeName" required>
+                            <option value="">请选择员工</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleDate">排班日期</label>
+                        <input type="date" id="scheduleDate" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="startTime">开始时间</label>
+                        <input type="time" id="startTime" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="endTime">结束时间</label>
+                        <input type="time" id="endTime" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="projectName">项目名称</label>
+                        <select id="projectName" required>
+                            <option value="">请选择项目</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="clientName">对接客户</label>
+                        <input type="text" id="clientName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="clientSource">客户来源渠道</label>
+                        <select id="clientSource" required>
+                            <option value="">请选择来源渠道</option>
+                            <option value="小红书">小红书</option>
+                            <option value="微信群">微信群</option>
+                            <option value="tg">TG</option>
+                            <option value="抖音">抖音</option>
+                            <option value="视频号">视频号</option>
+                            <option value="美团">美团</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="payment">客户付款金额 (元)</label>
+                        <input type="number" id="payment" min="0" step="0.01" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="commission">员工提成 (元)</label>
+                        <input type="number" id="commission" min="0" step="0.01" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">添加记录</button>
+                </form>
+                </div>
+            </section>
+
+                    <!-- 坐班费用模块 -->
+                    <section class="attendance-fee-section collapsible-section" id="section-attendance">
+                        <div class="collapsible-header" data-section="section-attendance">
+                            <h2>坐班费用管理</h2>
+                            <span class="collapse-arrow">▾</span>
+                        </div>
+                        <div class="section-body">
+                        <div class="attendance-fee-form">
+                            <form id="attendanceFeeForm">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="attendanceDate">坐班日期</label>
+                                        <input type="date" id="attendanceDate" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="attendanceEmployee">员工姓名</label>
+                                        <select id="attendanceEmployee" required>
+                                            <option value="">请选择员工</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="attendanceFee">坐班费用</label>
+                                        <input type="number" id="attendanceFee" placeholder="请输入坐班费用" min="0" step="0.01" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <button type="submit" class="btn btn-primary">添加坐班费用</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="attendance-fee-list">
+                            <div class="list-header">
+                                <h3>坐班费用记录</h3>
+                                <div class="list-actions">
+                                    <button class="btn btn-secondary" id="clearAttendanceFee">清除所有坐班费用</button>
+                                </div>
+                            </div>
+                            <div class="attendance-fee-table-container">
+                                <table id="attendanceFeeTable" class="attendance-fee-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="date">坐班日期 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="employee">员工姓名 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="fee">坐班费用 <span class="sort-icon">↕</span></th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="attendanceFeeTableBody">
+                                        <tr>
+                                            <td colspan="4" class="no-data">暂无坐班费用记录</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        </div>
+                    </section>
+
+                    <!-- 面试费用模块 -->
+                    <section class="interview-fee-section collapsible-section" id="section-interview">
+                        <div class="collapsible-header" data-section="section-interview">
+                            <h2>面试费用管理</h2>
+                            <span class="collapse-arrow">▾</span>
+                        </div>
+                        <div class="section-body">
+                        <div class="interview-fee-form">
+                            <form id="interviewFeeForm">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="interviewDate">面试日期</label>
+                                        <input type="date" id="interviewDate" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="interviewEmployee">员工姓名</label>
+                                        <select id="interviewEmployee" required>
+                                            <option value="">请选择员工</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="interviewFee">面试费用</label>
+                                        <input type="number" id="interviewFee" placeholder="请输入面试费用" min="0" step="0.01" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <button type="submit" class="btn btn-primary">添加面试费用</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="interview-fee-list">
+                            <div class="list-header">
+                                <h3>面试费用记录</h3>
+                                <div class="list-actions">
+                                    <button class="btn btn-secondary" id="clearInterviewFee">清除所有面试费用</button>
+                                </div>
+                            </div>
+                            <div class="interview-fee-table-container">
+                                <table id="interviewFeeTable" class="interview-fee-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="date">面试日期 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="employee">员工姓名 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="fee">面试费用 <span class="sort-icon">↕</span></th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="interviewFeeTableBody">
+                                        <tr>
+                                            <td colspan="4" class="no-data">暂无面试费用记录</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- 右侧列 -->
+                <div class="right-column">
+                    <!-- 数据展示区域 -->
+                    <section class="display-section">
+                <div class="section-header">
+                    <h2>排班记录展示</h2>
+                    <div class="controls">
+                        <div class="view-controls">
+                            <label for="viewMode" class="view-label">展示模式：</label>
+                            <select id="viewMode" class="view-selector">
+                                <option value="day">按日展示</option>
+                                <option value="week">按周展示</option>
+                                <option value="month">按月展示</option>
+                            </select>
+                        </div>
+                        <div class="date-controls">
+                            <input type="date" id="filterDate" class="date-filter" style="display: block;">
+                            <input type="week" id="filterWeek" class="week-filter" style="display: none;">
+                            <input type="month" id="filterMonth" class="month-filter" style="display: none;">
+                        </div>
+                        <button id="clearFilter" class="btn btn-secondary">清除筛选</button>
+                        <button class="btn btn-ghost action-toggle" id="actionToggle">⚙️ 更多操作 ▾</button>
+                        <div class="action-buttons-panel" id="actionButtonsPanel">
+                            <button id="exportData" class="btn btn-success">导出数据</button>
+                            <button id="importData" class="btn btn-info">批量导入</button>
+                            <button id="exportToFile" class="btn btn-primary" title="将排班数据保存到本地文件（不受存储空间限制）">💾 导出到文件</button>
+                            <button id="loadFromFile" class="btn btn-warning" title="从本地文件加载排班数据">📂 从文件加载</button>
+                            <button id="backupAllData" class="btn btn-primary">💾 完整备份</button>
+                            <button id="restoreAllData" class="btn btn-warning">📥 恢复数据</button>
+                            <button id="clearAllData" class="btn btn-danger">清除所有记录</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 统计信息 -->
+                <div class="stats">
+                    <div class="stat-card">
+                        <h3>总记录数</h3>
+                        <span id="totalRecords">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>总金额</h3>
+                        <span id="totalAmount">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>总提成</h3>
+                        <span id="totalCommission">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>员工数量</h3>
+                        <span id="employeeCount">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>净收益</h3>
+                        <span id="netProfit">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>坐班费用</h3>
+                        <span id="totalAttendanceFee">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>面试费用</h3>
+                        <span id="totalInterviewFee">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>运营成本</h3>
+                        <span id="totalOperatingCost">¥0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>净利润</h3>
+                        <span id="netProfitFinal">¥0</span>
+                    </div>
+                </div>
+
+                <!-- 表格展示 -->
+                <div class="table-container">
+                    <table id="scheduleTable" class="schedule-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="date">
+                                    日期 <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="time">
+                                    时间段 <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="employee">
+                                    员工姓名 <span class="sort-icon">↕</span>
+                                </th>
+                                <th>项目名称</th>
+                                <th class="sortable" data-sort="client">
+                                    对接客户 <span class="sort-icon">↕</span>
+                                </th>
+                                <th>客户来源渠道</th>
+                                <th class="sortable" data-sort="payment">
+                                    付款金额 <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="commission">
+                                    员工提成 <span class="sort-icon">↕</span>
+                                </th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleTableBody">
+                            <!-- 数据将通过JavaScript动态填充 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 员工提成统计 -->
+                <div class="employee-commission-summary collapsible-section">
+                    <div class="collapsible-header">
+                        <h3>员工提成统计</h3>
+                        <span class="collapse-arrow">▾</span>
+                    </div>
+                    <div class="section-body">
+                        <p id="commissionTimeRange" class="summary-subtitle">当前时间维度下的员工提成汇总</p>
+                        <div class="commission-cards" id="commissionCards">
+                            <!-- 员工提成卡片将通过JavaScript动态填充 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 客户TOP20统计 -->
+                <div class="client-top20-summary collapsible-section">
+                    <div class="collapsible-header">
+                        <h3>客户TOP20统计</h3>
+                        <span class="collapse-arrow">▾</span>
+                    </div>
+                    <div class="section-body">
+                        <p id="clientTimeRange" class="summary-subtitle">当前时间维度下的客户活跃度与消费分析</p>
+                        <div class="client-top20-container">
+                            <!-- 按次数排序 -->
+                            <div class="client-top20-section">
+                                <div class="section-title">
+                                    <h4>📊 活跃度TOP20</h4>
+                                    <p>按排班次数排序</p>
+                                </div>
+                                <div class="client-top20-list" id="clientCountTop20">
+                                    <!-- 客户次数TOP20将通过JavaScript动态填充 -->
+                                </div>
+                            </div>
+                            <!-- 按金额排序 -->
+                            <div class="client-top20-section">
+                                <div class="section-title">
+                                    <h4>💰 消费TOP20</h4>
+                                    <p>按消费金额排序</p>
+                                </div>
+                                <div class="client-top20-list" id="clientAmountTop20">
+                                    <!-- 客户金额TOP20将通过JavaScript动态填充 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据管理页面 -->
+        <div id="management-tab" class="tab-content">
+            <div class="management-content">
+                <!-- 存储空间管理区域 -->
+                <section class="storage-section" style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin-bottom: 30px;">
+                    <h2 style="color: #856404; margin-bottom: 15px;">💾 存储空间管理</h2>
+                    <p style="color: #856404; margin-bottom: 15px;">管理浏览器存储空间，避免数据保存失败</p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="checkStorageBtn" class="btn btn-info">📊 查看存储使用情况</button>
+                        <button id="cleanPhotosBtn" class="btn btn-warning">🧹 清理员工头像</button>
+                    </div>
+                </section>
+
+                <!-- 员工信息管理区域 -->
+                <section class="employee-section">
+                    <h2>员工信息管理</h2>
+                    <div class="employee-controls">
+                        <button id="addEmployeeBtn" class="btn btn-primary">添加员工</button>
+                        <button id="manageEmployeesBtn" class="btn btn-secondary">管理员工</button>
+                    </div>
+                    <div class="employee-list" id="employeeList">
+                        <!-- 员工列表将通过JavaScript动态填充 -->
+                    </div>
+                </section>
+
+                <!-- 项目管理区域 -->
+                <section class="project-section">
+                    <h2>项目管理</h2>
+                    <div class="project-controls">
+                        <button id="addProjectBtn" class="btn btn-primary">添加项目</button>
+                        <button id="manageProjectsBtn" class="btn btn-secondary">管理项目</button>
+                    </div>
+                    <div class="project-list" id="projectList">
+                        <!-- 项目列表将通过JavaScript动态填充 -->
+                    </div>
+                </section>
+
+                <!-- 员工薪资管理区域 -->
+                <section class="salary-management-section">
+                    <div class="section-header">
+                        <h2>💰 员工薪资管理</h2>
+                        <p>按项目设置薪资档位并分配员工</p>
+                    </div>
+
+                    <div class="salary-management-content">
+                        <!-- 左侧：项目选择和档位管理 -->
+                        <div class="salary-left-panel">
+                            <div class="salary-project-selector">
+                                <div class="form-group">
+                                    <label for="salaryProjectSelect">选择项目</label>
+                                    <select id="salaryProjectSelect" class="form-control">
+                                        <option value="">请选择项目</option>
+                                    </select>
+                                </div>
+                                <button id="addSalaryTierBtn" class="btn btn-primary" disabled>
+                                    ➕ 添加薪资档位
+                                </button>
+                            </div>
+
+                            <div class="salary-tiers-container" id="salaryTiersContainer">
+                                <div class="empty-state">
+                                    <p>👆 请先选择一个项目</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧：员工分配区域 -->
+                        <div class="salary-right-panel">
+                            <div class="salary-employee-assignment" id="salaryEmployeeAssignment">
+                                <div class="empty-state">
+                                    <p>👈 请先选择一个薪资档位</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 报告返现页面 -->
+        <div id="rebate-tab" class="tab-content">
+            <div class="rebate-content">
+                <!-- 报告返现管理区域 -->
+                <section class="report-rebate-section-page">
+                    <div class="section-header">
+                        <h2>报告返现管理</h2>
+                        <p>记录用户报告返现费用</p>
+                    </div>
+                    
+                    <div class="rebate-main-content">
+                        <!-- 左侧表单 -->
+                        <div class="rebate-form-container">
+                            <h3>添加返现记录</h3>
+                            <form id="reportRebateForm">
+                                <div class="form-group">
+                                    <label for="reportRebateDate">时间</label>
+                                    <input type="date" id="reportRebateDate" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportRebateUserName">用户名称</label>
+                                    <input type="text" id="reportRebateUserName" placeholder="请输入用户名称" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportRebateEmployee">服务员工</label>
+                                    <select id="reportRebateEmployee" required>
+                                        <option value="">请选择服务员工</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportRebateContent">报告内容</label>
+                                    <textarea id="reportRebateContent" placeholder="请输入报告内容" rows="4" required></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportRebateAmount">返现费用</label>
+                                    <input type="number" id="reportRebateAmount" placeholder="请输入返现费用" min="0" step="0.01" required>
+                                </div>
+                                <button type="submit" class="btn btn-primary">添加返现记录</button>
+                            </form>
+                        </div>
+
+                        <!-- 右侧表格 -->
+                        <div class="rebate-table-container-wrapper">
+                            <div class="list-header">
+                                <h3>报告返现记录</h3>
+                                <div class="list-actions">
+                                    <button class="btn btn-secondary" id="clearReportRebate">清除所有返现记录</button>
+                                </div>
+                            </div>
+                            
+                            <!-- 统计卡片 -->
+                            <div class="rebate-stats">
+                                <div class="stat-card">
+                                    <h3>返现总金额</h3>
+                                    <span id="totalRebateAmount">¥0</span>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>返现记录数</h3>
+                                    <span id="totalRebateCount">0</span>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>服务用户数</h3>
+                                    <span id="totalRebateUsers">0</span>
+                                </div>
+                            </div>
+
+                            <div class="report-rebate-table-container">
+                                <table id="reportRebateTable" class="report-rebate-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable" data-sort="date">时间 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="user">用户名称 <span class="sort-icon">↕</span></th>
+                                            <th class="sortable" data-sort="employee">服务员工 <span class="sort-icon">↕</span></th>
+                                            <th>报告内容</th>
+                                            <th class="sortable" data-sort="amount">返现费用 <span class="sort-icon">↕</span></th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="reportRebateTableBody">
+                                        <tr>
+                                            <td colspan="6" class="no-data">暂无报告返现记录</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 数据图表页面 -->
+        <div id="charts-tab" class="tab-content">
+            <div class="charts-content">
+                <!-- 全局时间范围控制栏 -->
+                <div class="global-chart-range-bar">
+                    <div class="global-range-label">📅 全局时间范围：</div>
+                    <div class="global-range-controls">
+                        <select id="globalChartDateRange" class="chart-selector global-chart-selector">
+                            <option value="7">最近7天</option>
+                            <option value="14">最近14天</option>
+                            <option value="30" selected>最近30天</option>
+                            <option value="60">最近60天</option>
+                            <option value="90">最近90天</option>
+                            <option value="all">全部时间</option>
+                            <option value="custom">自定义日期</option>
+                        </select>
+                        <div id="globalCustomDateRangeContainer" style="display: none; align-items: center; gap: 8px;">
+                            <label for="globalChartStartDate" style="white-space: nowrap; font-size: 0.9em;">起始：</label>
+                            <input type="date" id="globalChartStartDate" class="date-input">
+                            <span style="color: var(--color-text-secondary);">—</span>
+                            <label for="globalChartEndDate" style="white-space: nowrap; font-size: 0.9em;">结束：</label>
+                            <input type="date" id="globalChartEndDate" class="date-input">
+                        </div>
+                        <button class="btn-apply-global-range" onclick="scheduleManager.applyGlobalChartDateRange()">应用到全部图表</button>
+                    </div>
+                </div>
+
+                <!-- 每日收入图表区域 -->
+                <section class="chart-section">
+                    <div class="chart-header">
+                        <h2>每日收入变化趋势</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="chartDateRange">选择时间范围：</label>
+                                <select id="chartDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="customDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="chartStartDate">起始日期：</label>
+                                <input type="date" id="chartStartDate" class="chart-date-input">
+                                <label for="chartEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="chartEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-stats">
+                        <div class="chart-stat-card">
+                            <h3>总收入</h3>
+                            <span id="chartTotalIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>平均日收入</h3>
+                            <span id="chartAvgIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>最高日收入</h3>
+                            <span id="chartMaxIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>最低日收入</h3>
+                            <span id="chartMinIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>总净收益</h3>
+                            <span id="chartTotalNetProfit">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>平均日净收益</h3>
+                            <span id="chartAvgNetProfit">¥0</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="incomeChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 工作时段热力图区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>工作时段热力图</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="heatmapDateRange">选择时间范围：</label>
+                                <select id="heatmapDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="heatmapCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="heatmapStartDate">起始日期：</label>
+                                <input type="date" id="heatmapStartDate" class="chart-date-input">
+                                <label for="heatmapEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="heatmapEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="heatmap-stats">
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>最忙时段</h3>
+                            <span id="busiestHour">--</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>最闲时段</h3>
+                            <span id="quietestHour">--</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>总订单数</h3>
+                            <span id="totalOrders">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>峰值时段收入</h3>
+                            <span id="peakHourIncome">¥0</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="heatmapChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 客户来源渠道分析区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>客户来源渠道分析</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="sourceChannelDateRange">选择时间范围：</label>
+                                <select id="sourceChannelDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="sourceChannelCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="sourceChannelStartDate">起始日期：</label>
+                                <input type="date" id="sourceChannelStartDate" class="chart-date-input">
+                                <label for="sourceChannelEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="sourceChannelEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="source-channel-stats">
+                        <div class="chart-stat-card">
+                            <h3>最佳渠道</h3>
+                            <span id="topChannel">--</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>渠道数量</h3>
+                            <span id="channelCount">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>最高渠道订单</h3>
+                            <span id="topChannelOrders">0单</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>最高渠道收入</h3>
+                            <span id="topChannelIncome">¥0</span>
+                        </div>
+                    </div>
+                    <div class="source-channel-charts">
+                        <div class="chart-container chart-container-half">
+                            <h3 class="chart-subtitle">按订单数量占比</h3>
+                            <canvas id="sourceChannelOrderChart"></canvas>
+                        </div>
+                        <div class="chart-container chart-container-half">
+                            <h3 class="chart-subtitle">按收入金额占比</h3>
+                            <canvas id="sourceChannelIncomeChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 员工业绩对比图表区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>员工业绩对比分析</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="employeePerformanceDateRange">选择时间范围：</label>
+                                <select id="employeePerformanceDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="employeePerformanceCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="employeePerformanceStartDate">起始日期：</label>
+                                <input type="date" id="employeePerformanceStartDate" class="chart-date-input">
+                                <label for="employeePerformanceEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="employeePerformanceEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="employee-performance-stats">
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>最佳员工</h3>
+                            <span id="topEmployee">--</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>员工总数</h3>
+                            <span id="employeeTotal">0人</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>最高业绩</h3>
+                            <span id="topEmployeeIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>人均业绩</h3>
+                            <span id="avgEmployeeIncome">¥0</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="employeePerformanceChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 客户合作员工数量TOP10图表区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>客户合作员工数量TOP10</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="clientEmployeeCollaborationDateRange">选择时间范围：</label>
+                                <select id="clientEmployeeCollaborationDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="clientEmployeeCollaborationCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="clientEmployeeCollaborationStartDate">起始日期：</label>
+                                <input type="date" id="clientEmployeeCollaborationStartDate" class="chart-date-input">
+                                <label for="clientEmployeeCollaborationEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="clientEmployeeCollaborationEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="client-collaboration-stats">
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>最佳合作客户</h3>
+                            <span id="topCollaborationClient">--</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>合作客户总数</h3>
+                            <span id="totalCollaborationClients">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>最多合作员工数</h3>
+                            <span id="maxCollaborationEmployees">0人</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>平均合作员工数</h3>
+                            <span id="avgCollaborationEmployees">0人</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="clientEmployeeCollaborationChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 员工客户合作TOP10图表区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>员工客户合作TOP10分析</h2>
+                        <!-- 员工选择器单独保留（非时间范围控件） -->
+                        <div class="chart-employee-selector">
+                            <label for="employeeClientEmployee">选择员工：</label>
+                            <select id="employeeClientEmployee" class="chart-selector">
+                                <option value="">请选择员工</option>
+                            </select>
+                        </div>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="employeeClientDateRange">选择时间范围：</label>
+                                <select id="employeeClientDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="employeeClientCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="employeeClientStartDate">起始日期：</label>
+                                <input type="date" id="employeeClientStartDate" class="chart-date-input">
+                                <label for="employeeClientEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="employeeClientEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="employee-client-stats">
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>最常合作客户</h3>
+                            <span id="topEmployeeClient">--</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>合作客户总数</h3>
+                            <span id="totalEmployeeClients">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>总合作次数</h3>
+                            <span id="totalEmployeeOrders">0单</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>总收入金额</h3>
+                            <span id="totalEmployeeIncome">¥0</span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="employeeClientChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- 员工排行榜区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>员工业绩排行榜</h2>
+                        <!-- 排序方式选择器单独保留 -->
+                        <div class="chart-employee-selector">
+                            <label for="employeeRankingSortBy">排序方式：</label>
+                            <select id="employeeRankingSortBy" class="chart-selector">
+                                <option value="profit">按利润排序</option>
+                                <option value="orders">按订单数排序</option>
+                                <option value="commission">按提成金额排序</option>
+                                <option value="commissionRate">按提成比例排序</option>
+                            </select>
+                        </div>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="employeeRankingDateRange">选择时间范围：</label>
+                                <select id="employeeRankingDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="employeeRankingCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="employeeRankingStartDate">起始日期：</label>
+                                <input type="date" id="employeeRankingStartDate" class="chart-date-input">
+                                <label for="employeeRankingEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="employeeRankingEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 汇总统计卡片 -->
+                    <div class="employee-ranking-stats">
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>🏆 利润榜首</h3>
+                            <span id="topProfitEmployee">--</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>📊 订单榜首</h3>
+                            <span id="topOrdersEmployee">--</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>💎 最高提成比例</h3>
+                            <span id="topCommissionRateEmployee">--</span>
+                        </div>
+                        <div class="chart-stat-card">
+                            <h3>💰 总利润</h3>
+                            <span id="totalCompanyProfit">¥0</span>
+                        </div>
+                    </div>
+
+                    <!-- 员工排行榜表格 -->
+                    <div class="employee-ranking-table-container">
+                        <table class="employee-ranking-table" id="employeeRankingTable">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>员工姓名</th>
+                                    <th>订单数量</th>
+                                    <th>总收入</th>
+                                    <th>员工提成</th>
+                                    <th>提成比例</th>
+                                    <th>坐班费</th>
+                                    <th>报告费</th>
+                                    <th class="highlight-column">为公司赚利润</th>
+                                </tr>
+                            </thead>
+                            <tbody id="employeeRankingTableBody">
+                                <tr>
+                                    <td colspan="9" class="no-data">暂无数据</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 新老客户活跃度分析区域 -->
+                <section class="chart-section" style="margin-top: 30px;">
+                    <div class="chart-header">
+                        <h2>客户活跃度分层分析</h2>
+                        <div class="chart-controls">
+                            <div class="form-group">
+                                <label for="customerStatusDateRange">选择时间范围：</label>
+                                <select id="customerStatusDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="customerStatusCustomDateRangeContainer" style="display: none; margin-left: 10px;">
+                                <label for="customerStatusStartDate">起始日期：</label>
+                                <input type="date" id="customerStatusStartDate" class="chart-date-input">
+                                <label for="customerStatusEndDate" style="margin-left: 10px;">结束日期：</label>
+                                <input type="date" id="customerStatusEndDate" class="chart-date-input">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 分类说明 -->
+                    <div class="customer-status-legend">
+                        <div class="legend-item legend-new">
+                            <span class="legend-icon">🆕</span>
+                            <div class="legend-text">
+                                <strong>新客户</strong>
+                                <small>合作次数 ≤ 2次</small>
+                            </div>
+                        </div>
+                        <div class="legend-item legend-returning">
+                            <span class="legend-icon">🔄</span>
+                            <div class="legend-text">
+                                <strong>回头客</strong>
+                                <small>合作次数 = 3次</small>
+                            </div>
+                        </div>
+                        <div class="legend-item legend-active">
+                            <span class="legend-icon">✅</span>
+                            <div class="legend-text">
+                                <strong>活跃老客户</strong>
+                                <small>合作 > 3次，且最近10天有合作</small>
+                            </div>
+                        </div>
+                        <div class="legend-item legend-inactive">
+                            <span class="legend-icon">😴</span>
+                            <div class="legend-text">
+                                <strong>沉睡老客户</strong>
+                                <small>合作 > 3次，但最近10天无合作</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 统计卡片 -->
+                    <div class="customer-status-stats">
+                        <div class="chart-stat-card stat-card-new">
+                            <h3>🆕 新客户数量</h3>
+                            <span id="newCustomerCount">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-returning">
+                            <h3>🔄 回头客数量</h3>
+                            <span id="returningCustomerCount">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-active">
+                            <h3>✅ 活跃老客户</h3>
+                            <span id="activeCustomerCount">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-inactive">
+                            <h3>😴 沉睡老客户</h3>
+                            <span id="inactiveCustomerCount">0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>💰 新客户收入</h3>
+                            <span id="newCustomerIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-info">
+                            <h3>💰 回头客收入</h3>
+                            <span id="returningCustomerIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-success">
+                            <h3>💰 活跃客户收入</h3>
+                            <span id="activeCustomerIncome">¥0</span>
+                        </div>
+                        <div class="chart-stat-card stat-card-warning">
+                            <h3>💰 沉睡客户收入</h3>
+                            <span id="inactiveCustomerIncome">¥0</span>
+                        </div>
+                    </div>
+
+                    <!-- 双饼图区域 -->
+                    <div class="customer-status-pie-charts">
+                        <div class="chart-container-half">
+                            <h3 class="chart-subtitle">客户数量分布</h3>
+                            <canvas id="customerCountPieChart"></canvas>
+                        </div>
+                        <div class="chart-container-half">
+                            <h3 class="chart-subtitle">收入金额分布</h3>
+                            <canvas id="customerIncomePieChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 对比柱状图 -->
+                    <div class="chart-container" style="margin-top: 30px;">
+                        <canvas id="customerStatusBarChart"></canvas>
+                    </div>
+
+                    <!-- 客户详细列表 -->
+                    <div class="customer-detail-lists">
+                        <h3 class="detail-lists-title">客户详细列表</h3>
+                        
+                        <!-- 新客户列表 -->
+                        <div class="customer-list-section">
+                            <div class="list-section-header" onclick="scheduleManager.toggleCustomerList('new')">
+                                <div class="header-left">
+                                    <span class="list-icon">🆕</span>
+                                    <h4>新客户列表</h4>
+                                    <span class="list-count" id="newCustomerListCount">0</span>
+                                    <span class="scroll-hint" id="newCustomerScrollHint" style="display: none;">↕️ 可滚动查看全部</span>
+                                </div>
+                                <span class="toggle-icon" id="newCustomerToggle">▼</span>
+                            </div>
+                            <div class="customer-list-content" id="newCustomerList" style="display: none;">
+                                <table class="customer-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th>客户名称</th>
+                                            <th>合作次数</th>
+                                            <th>最后合作日期</th>
+                                            <th>总收入</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="newCustomerTableBody">
+                                        <tr><td colspan="4" class="no-data">暂无数据</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 回头客列表 -->
+                        <div class="customer-list-section">
+                            <div class="list-section-header" onclick="scheduleManager.toggleCustomerList('returning')">
+                                <div class="header-left">
+                                    <span class="list-icon">🔄</span>
+                                    <h4>回头客列表</h4>
+                                    <span class="list-count" id="returningCustomerListCount">0</span>
+                                </div>
+                                <span class="toggle-icon" id="returningCustomerToggle">▼</span>
+                            </div>
+                            <div class="customer-list-content" id="returningCustomerList" style="display: none;">
+                                <table class="customer-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th>客户名称</th>
+                                            <th>合作次数</th>
+                                            <th>最后合作日期</th>
+                                            <th>总收入</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="returningCustomerTableBody">
+                                        <tr><td colspan="4" class="no-data">暂无数据</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 活跃老客户列表 -->
+                        <div class="customer-list-section">
+                            <div class="list-section-header" onclick="scheduleManager.toggleCustomerList('active')">
+                                <div class="header-left">
+                                    <span class="list-icon">✅</span>
+                                    <h4>活跃老客户列表</h4>
+                                    <span class="list-count" id="activeCustomerListCount">0</span>
+                                </div>
+                                <span class="toggle-icon" id="activeCustomerToggle">▼</span>
+                            </div>
+                            <div class="customer-list-content" id="activeCustomerList" style="display: none;">
+                                <table class="customer-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th>客户名称</th>
+                                            <th>合作次数</th>
+                                            <th>最后合作日期</th>
+                                            <th>总收入</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="activeCustomerTableBody">
+                                        <tr><td colspan="4" class="no-data">暂无数据</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 沉睡老客户列表 -->
+                        <div class="customer-list-section">
+                            <div class="list-section-header" onclick="scheduleManager.toggleCustomerList('inactive')">
+                                <div class="header-left">
+                                    <span class="list-icon">😴</span>
+                                    <h4>沉睡老客户列表</h4>
+                                    <span class="list-count" id="inactiveCustomerListCount">0</span>
+                                    <span class="warning-badge">⚠️ 需要关注</span>
+                                </div>
+                                <span class="toggle-icon" id="inactiveCustomerToggle">▼</span>
+                            </div>
+                            <div class="customer-list-content" id="inactiveCustomerList" style="display: none;">
+                                <table class="customer-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th>客户名称</th>
+                                            <th>合作次数</th>
+                                            <th>最后合作日期</th>
+                                            <th>沉睡天数</th>
+                                            <th>总收入</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="inactiveCustomerTableBody">
+                                        <tr><td colspan="5" class="no-data">暂无数据</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- 运营成本管理页面 -->
+        <div id="operating-cost-tab" class="tab-content">
+            <div class="oc-layout">
+                <!-- 左列：录入 + 统计 -->
+                <aside class="oc-sidebar">
+                    <!-- 添加表单 -->
+                    <section class="oc-card">
+                        <h2 class="oc-card-title">添加成本记录</h2>
+                        <form id="operatingCostForm" class="oc-form">
+                            <div class="form-group">
+                                <label for="operatingCostDate">时间</label>
+                                <input type="date" id="operatingCostDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="operatingCostCategory">分类</label>
+                                <select id="operatingCostCategory" required>
+                                    <option value="">请选择分类</option>
+                                    <option value="推广费用">推广费用</option>
+                                    <option value="人力成本">人力成本</option>
+                                    <option value="房租租金">房租租金</option>
+                                    <option value="损耗开销">损耗开销</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="operatingCostItem">费用项目</label>
+                                <input type="text" id="operatingCostItem" placeholder="如：水电费、房租等" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="operatingCostNote">备注</label>
+                                <input type="text" id="operatingCostNote" placeholder="可选">
+                            </div>
+                            <div class="form-group">
+                                <label for="operatingCostAmount">金额</label>
+                                <input type="number" id="operatingCostAmount" placeholder="请输入金额" min="0" step="0.01" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="width:100%">添加记录</button>
+                        </form>
+                    </section>
+
+                    <!-- 统计卡片 -->
+                    <section class="oc-card">
+                        <h2 class="oc-card-title">成本概览</h2>
+                        <div class="oc-stats">
+                            <div class="oc-stat-item">
+                                <span class="oc-stat-label">总成本</span>
+                                <span class="oc-stat-value" id="totalOperatingCostAmount">¥0</span>
+                            </div>
+                            <div class="oc-stat-item">
+                                <span class="oc-stat-label">本月成本</span>
+                                <span class="oc-stat-value" id="monthlyOperatingCost">¥0</span>
+                            </div>
+                            <div class="oc-stat-item">
+                                <span class="oc-stat-label">平均日成本</span>
+                                <span class="oc-stat-value" id="avgDailyOperatingCost">¥0</span>
+                            </div>
+                            <div class="oc-stat-item">
+                                <span class="oc-stat-label">最高分类</span>
+                                <span class="oc-stat-value oc-stat-value--sm" id="topOperatingCostCategory">--</span>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+
+                <!-- 右列：图表 + 记录列表 -->
+                <main class="oc-main">
+                    <!-- 图表区域 -->
+                    <section class="oc-card">
+                        <div class="oc-card-header">
+                            <h2 class="oc-card-title">成本分析</h2>
+                            <div class="oc-chart-controls">
+                                <select id="operatingCostChartDateRange" class="chart-selector">
+                                    <option value="30">近30天</option>
+                                    <option value="60">近60天</option>
+                                    <option value="90">近90天</option>
+                                    <option value="all" selected>全部</option>
+                                </select>
+                                <select id="operatingCostChartType" class="chart-selector">
+                                    <option value="month" selected>按月</option>
+                                    <option value="week">按周</option>
+                                    <option value="day">按日</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="oc-charts-row">
+                            <div class="oc-chart-wrap">
+                                <p class="oc-chart-label">各分类支出</p>
+                                <div class="oc-chart-inner">
+                                    <canvas id="operatingCostCategoryChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="oc-chart-wrap">
+                                <p class="oc-chart-label">按月支出明细</p>
+                                <div class="oc-chart-inner">
+                                    <canvas id="operatingCostTrendChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 记录列表 -->
+                    <section class="oc-card">
+                        <div class="oc-card-header">
+                            <h2 class="oc-card-title">成本记录</h2>
+                            <button class="btn btn-secondary" id="clearOperatingCost">清除全部</button>
+                        </div>
+                        <div class="operating-cost-table-container">
+                            <table id="operatingCostTable" class="operating-cost-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-sort="date">时间 <span class="sort-icon">↕</span></th>
+                                        <th class="sortable" data-sort="category">分类 <span class="sort-icon">↕</span></th>
+                                        <th class="sortable" data-sort="item">费用项目 <span class="sort-icon">↕</span></th>
+                                        <th>备注</th>
+                                        <th class="sortable" data-sort="amount">金额 <span class="sort-icon">↕</span></th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="operatingCostTableBody">
+                                    <tr>
+                                        <td colspan="6" class="no-data">暂无运营成本记录</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+
+        <!-- AI 分析页面 -->
+        <div id="ai-analysis-tab" class="tab-content">
+            <div class="ai-analysis-content">
+
+                <!-- API Key 配置（折叠面板） -->
+                <div class="ai-config-bar">
+                    <span class="ai-config-label">🔑 DeepSeek API Key：</span>
+                    <input type="password" id="aiApiKey" class="ai-api-key-input" placeholder="sk-xxxxxxxx" autocomplete="off">
+                    <button class="ai-config-save-btn" onclick="scheduleManager.saveAIApiKey()">保存</button>
+                    <span id="aiConfigStatus" class="ai-config-status"></span>
+                </div>
+
+                <!-- 方案A：智能分析报告 -->
+                <section class="ai-section ai-report-section">
+                    <div class="ai-section-header">
+                        <div class="ai-section-title">
+                            <span class="ai-section-icon">📊</span>
+                            <div>
+                                <h2>AI 智能分析报告</h2>
+                                <p>一键生成完整的经营分析报告，发现数据背后的规律与建议</p>
+                            </div>
+                        </div>
+                        <div class="ai-report-controls">
+                            <div class="ai-range-group">
+                                <label>分析时间范围：</label>
+                                <select id="aiReportDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                    <option value="custom">自定义日期</option>
+                                </select>
+                            </div>
+                            <div id="aiReportCustomRange" class="ai-custom-range" style="display:none;">
+                                <input type="date" id="aiReportStartDate" class="chart-date-input">
+                                <span>—</span>
+                                <input type="date" id="aiReportEndDate" class="chart-date-input">
+                            </div>
+                            <button id="aiGenerateReportBtn" class="ai-primary-btn" onclick="scheduleManager.generateAIReport()">
+                                <span class="btn-icon">🚀</span> 生成报告
+                            </button>
+                            <button class="ai-secondary-btn" onclick="scheduleManager.copyAIReport()" title="复制报告">📋 复制</button>
+                            <button class="ai-secondary-btn" onclick="scheduleManager.clearAIReport()" title="清空">🗑️</button>
+                        </div>
+                    </div>
+
+                    <!-- 报告输出区 -->
+                    <div id="aiReportOutput" class="ai-report-output">
+                        <div class="ai-report-placeholder">
+                            <div class="ai-placeholder-icon">🤖</div>
+                            <p>选择时间范围，点击「生成报告」，AI 将基于你的真实经营数据生成深度分析报告</p>
+                            <div class="ai-placeholder-features">
+                                <span>📈 收入趋势</span>
+                                <span>🏆 员工绩效</span>
+                                <span>👥 客户分析</span>
+                                <span>📡 渠道 ROI</span>
+                                <span>💰 利润诊断</span>
+                                <span>🎯 可执行建议</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 方案B：对话式 AI 助手 -->
+                <section class="ai-section ai-chat-section">
+                    <div class="ai-section-header">
+                        <div class="ai-section-title">
+                            <span class="ai-section-icon">💬</span>
+                            <div>
+                                <h2>AI 数据助手</h2>
+                                <p>用自然语言提问，AI 直接基于你的经营数据回答</p>
+                            </div>
+                        </div>
+                        <div class="ai-chat-controls">
+                            <div class="ai-range-group">
+                                <label>数据范围：</label>
+                                <select id="aiChatDateRange" class="chart-selector">
+                                    <option value="7">最近7天</option>
+                                    <option value="14">最近14天</option>
+                                    <option value="30" selected>最近30天</option>
+                                    <option value="60">最近60天</option>
+                                    <option value="90">最近90天</option>
+                                    <option value="all">全部时间</option>
+                                </select>
+                            </div>
+                            <button class="ai-secondary-btn" onclick="scheduleManager.clearAIChat()">🗑️ 清空对话</button>
+                        </div>
+                    </div>
+
+                    <!-- 快捷问题 -->
+                    <div class="ai-quick-prompts">
+                        <span class="quick-prompts-label">快捷提问：</span>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('本月哪个员工表现最好？原因是什么？')">🏆 最佳员工</button>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('哪个获客渠道值得加大投入？')">📡 最佳渠道</button>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('我的客户流失情况怎么样？')">👥 客户流失</button>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('运营成本有什么需要关注的地方？')">💰 成本分析</button>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('给我3条最重要的改进建议')">🎯 改进建议</button>
+                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('下个月收入趋势大概是怎样的？')">📈 收入预测</button>
+                    </div>
+
+                    <!-- 对话消息区 -->
+                    <div id="aiChatMessages" class="ai-chat-messages">
+                        <div class="ai-chat-welcome">
+                            <div class="ai-avatar">🤖</div>
+                            <div class="ai-bubble ai-bubble-assistant">
+                                你好！我是你的 AI 经营助手。<br>
+                                点击上方的快捷问题，或者直接告诉我你想了解什么，我会基于你的真实经营数据来回答。
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 输入区 -->
+                    <div class="ai-chat-input-area">
+                        <textarea id="aiChatInput" class="ai-chat-input" placeholder="问我关于你生意的任何问题，例如：上周哪天收入最高？" rows="2" onkeydown="scheduleManager.handleAIChatKeydown(event)"></textarea>
+                        <button id="aiSendBtn" class="ai-send-btn" onclick="scheduleManager.sendAIChat()">
+                            <span>发送</span>
+                            <span class="send-icon">➤</span>
+                        </button>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+
+
+        <!-- 数据转化页面 - 接龙数据转换工具 -->
+        <div id="data-convert-tab" class="tab-content">
+            <div class="jl-converter">
+                <!-- 页面头部 -->
+                <section class="jl-header">
+                    <div class="jl-header-left">
+                        <h1>💪 接龙数据转换工具</h1>
+                        <p>将接龙格式数据自动转换为规范化表格，支持时间自动转换、金额拆分、等级价格匹配</p>
+                    </div>
+                    <div class="jl-header-right">
+                        <span id="jlPriceStatus" class="jl-price-status">未加载价格表</span>
+                    </div>
+                </section>
+
+                <!-- 价格表管理工具栏 -->
+                <section class="jl-toolbar">
+                    <div class="jl-toolbar-left">
+                        <button id="jlImportCsv" class="btn btn-info">📊 导入CSV价格表</button>
+                        <button id="jlManagePrice" class="btn btn-primary">💻 管理价格表</button>
+                        <button id="jlExportCsv" class="btn btn-success">📤 导出价格表</button>
+                    </div>
+                    <div class="jl-toolbar-right">
+                        <span id="jlEmployeeCount" class="jl-badge">员工: 0</span>
+                        <span id="jlGradeCount" class="jl-badge">等级: 0</span>
+                    </div>
+                </section>
+
+                <!-- 核心转换区域 -->
+                <section class="jl-convert-area">
+                    <div class="jl-grid">
+                        <!-- 左侧：输入区 -->
+                        <div class="jl-panel">
+                            <div class="jl-panel-header">
+                                <label>📥 粘贴接龙数据</label>
+                                <button id="jlClearInput" class="jl-icon-btn" title="清空输入">🗑️</button>
+                            </div>
+                            <textarea id="jlRawInput" rows="16" placeholder="直接粘贴接龙数据，例如：&#10;1. 圆圆ssss，2-3，布式猪（688）抖音&#10;2. 小莳sss，3-5，激光机+3（796）微信群&#10;3. 祖儿sss，6-7，Fiao（408）微信群&#10;4. 圆圆ssss，12-1，旧城少年（588）抖音&#10;&#10;支持带序号或不带序号的格式"></textarea>
+                        </div>
+                        <!-- 右侧：输出区 -->
+                        <div class="jl-panel">
+                            <div class="jl-panel-header">
+                                <label>📤 转换结果</label>
+                                <div style="display:flex;gap:6px;">
+                                    <button id="jlCopyResult" class="jl-icon-btn" title="复制结果">📋</button>
+                                    <button id="jlClearOutput" class="jl-icon-btn" title="清空输出">🗑️</button>
+                                </div>
+                            </div>
+                            <textarea id="jlConvertedOutput" rows="16" readonly placeholder="转换后的数据将显示在这里...&#10;&#10;格式：姓名，等级（价格），时间，客户（金额），平台"></textarea>
+                        </div>
+                    </div>
+                    <!-- 操作按钮栏 -->
+                    <div class="jl-action-bar">
+                        <button id="jlConvertBtn" class="jl-convert-btn">🚀 开始转换</button>
+                        <span id="jlConvertStatus" class="jl-convert-status"></span>
+                    </div>
+                </section>
+
+                <!-- 统计信息 -->
+                <section id="jlStats" class="jl-stats" style="display:none;">
+                    <div class="jl-stat-card"><h3>原始条数</h3><span id="jlStatInput">0</span></div>
+                    <div class="jl-stat-card"><h3>转换条数</h3><span id="jlStatOutput">0</span></div>
+                    <div class="jl-stat-card"><h3>涉及员工</h3><span id="jlStatEmployees">0</span></div>
+                    <div class="jl-stat-card"><h3>总金额</h3><span id="jlStatAmount">¥0</span></div>
+                    <div class="jl-stat-card"><h3>拆分记录</h3><span id="jlStatSplit">0</span></div>
+                </section>
+
+                <!-- 转换明细表格 -->
+                <section id="jlDetailSection" class="jl-detail-section" style="display:none;">
+                    <div class="jl-detail-header">
+                        <h2>📋 转换明细</h2>
+                        <button id="jlCopyDetailAll" class="btn btn-success">📋 复制全部明细</button>
+                    </div>
+                    <div class="jl-detail-table-wrap">
+                        <table class="jl-detail-table">
+                            <thead>
+                                <tr><th>#</th><th>姓名</th><th>等级</th><th>等级价格</th><th>时间段</th><th>客户</th><th>金额</th><th>平台</th></tr>
+                            </thead>
+                            <tbody id="jlDetailBody"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 价格表管理弹窗 -->
+                <div id="jlPriceModal" class="jl-modal" style="display:none;">
+                    <div class="jl-modal-content">
+                        <div class="jl-modal-header">
+                            <h2>💻 员工等级价格表管理</h2>
+                            <span class="jl-modal-close" id="jlClosePriceModal">&times;</span>
+                        </div>
+                        <div class="jl-modal-body">
+                            <div class="jl-price-actions">
+                                <button id="jlAddPriceRow" class="btn btn-primary">➕ 添加员工</button>
+                                <button id="jlAddGrade" class="btn btn-info">➕ 新增等级</button>
+                            </div>
+                            <div class="jl-price-table-wrap">
+                                <table class="jl-price-table">
+                                    <thead id="jlPriceTableHead"></thead>
+                                    <tbody id="jlPriceTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 店铺管理中心页面 -->
+        <div id="store-center-tab" class="tab-content">
+            <div class="store-center-content">
+                <!-- 店铺中心头部 -->
+                <section class="store-center-header">
+                    <h1>🏢 店铺管理中心</h1>
+                    <p>管理所有店铺，查看整体运营数据</p>
+                    <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+                        <button id="addNewStore" class="btn btn-primary">
+                            ➕ 添加新店铺
+                        </button>
+                        <button id="backupAllStores" class="btn btn-success">
+                            💾 全店铺备份
+                        </button>
+                    </div>
+                </section>
+
+                <!-- 全店汇总统计 -->
+                <section class="all-stores-summary">
+                    <h2>📊 全店汇总数据</h2>
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h3>店铺总数</h3>
+                            <span id="totalStores">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总营收</h3>
+                            <span id="allStoresTotalRevenue">¥0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总订单数</h3>
+                            <span id="allStoresTotalOrders">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总员工数</h3>
+                            <span id="allStoresTotalEmployees">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总提成</h3>
+                            <span id="allStoresTotalCommission">¥0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总利润</h3>
+                            <span id="allStoresTotalProfit">¥0</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 店铺列表 -->
+                <section class="stores-list-section">
+                    <h2>🏪 店铺列表</h2>
+                    <div id="storesList" class="stores-grid">
+                        <!-- 店铺卡片将通过JavaScript动态填充 -->
+                    </div>
+                </section>
+
+                <!-- 店铺对比图表 -->
+                <section class="store-comparison-section" style="margin-top: 30px;">
+                    <h2>📈 店铺业绩对比</h2>
+                    <div class="chart-container">
+                        <canvas id="storeComparisonChart"></canvas>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- 店铺信息管理模态框 -->
+    <div id="storeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="storeModalTitle">添加店铺</h2>
+                <span class="close" onclick="scheduleManager.closeStoreModal()">&times;</span>
+            </div>
+            <form id="storeForm" class="form">
+                <div class="form-group">
+                    <label for="storeNameInput">店铺名称</label>
+                    <input type="text" id="storeNameInput" placeholder="例如：XX店、YY分店" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="storeAddress">店铺地址</label>
+                    <input type="text" id="storeAddress" placeholder="请输入店铺地址">
+                </div>
+                
+                <div class="form-group">
+                    <label for="storePhone">联系电话</label>
+                    <input type="tel" id="storePhone" placeholder="请输入店铺电话">
+                </div>
+                
+                <div class="form-group">
+                    <label for="storeManager">店长姓名</label>
+                    <input type="text" id="storeManager" placeholder="请输入店长姓名">
+                </div>
+                
+                <div class="form-group">
+                    <label for="storeOpenDate">开业时间</label>
+                    <input type="date" id="storeOpenDate">
+                </div>
+                
+                <div class="form-group">
+                    <label for="storeNotes">备注信息</label>
+                    <textarea id="storeNotes" rows="3" placeholder="请输入店铺备注信息..."></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeStoreModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存店铺</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 员工信息管理模态框 -->
+    <div id="employeeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="employeeModalTitle">添加员工</h2>
+                <span class="close" onclick="scheduleManager.closeEmployeeModal()">&times;</span>
+            </div>
+            <form id="employeeForm" class="form">
+                <div class="form-group">
+                    <label for="employeeNameInput">员工姓名</label>
+                    <input type="text" id="employeeNameInput" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="employeePhone">联系电话</label>
+                    <input type="tel" id="employeePhone" placeholder="请输入手机号码">
+                </div>
+                
+                <div class="form-group">
+                    <label for="employeeHireDate">入职时间</label>
+                    <input type="date" id="employeeHireDate" placeholder="请选择入职时间">
+                </div>
+                
+                <div class="form-group">
+                    <label for="employeeNotes">备注信息</label>
+                    <textarea id="employeeNotes" rows="3" placeholder="请输入员工备注信息..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="employeePhoto">员工头像</label>
+                    <div class="photo-upload-container">
+                        <input type="file" id="employeePhoto" accept="image/*" style="display: none;">
+                        <div class="photo-upload-area" id="photoUploadArea">
+                            <div class="photo-preview" id="photoPreview" style="display: none;">
+                                <img id="photoPreviewImg" src="" alt="员工头像">
+                                <button type="button" class="remove-photo" id="removePhoto">×</button>
+                            </div>
+                            <div class="photo-upload-placeholder" id="photoUploadPlaceholder">
+                                <div class="upload-icon">📷</div>
+                                <p>点击上传头像</p>
+                                <small>支持 JPG、PNG 格式</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeEmployeeModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存员工</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 员工列表管理模态框 -->
+    <div id="employeeListModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>员工信息管理</h2>
+                <span class="close" onclick="scheduleManager.closeEmployeeListModal()">&times;</span>
+            </div>
+            <div class="employee-management">
+                <div class="employee-list-header">
+                    <h3>员工列表</h3>
+                    <button id="addNewEmployeeBtn" class="btn btn-primary">添加新员工</button>
+                </div>
+                <div class="employee-list-container" id="employeeListContainer">
+                    <!-- 员工列表将通过JavaScript动态填充 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 项目管理模态框 -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="projectModalTitle">添加项目</h2>
+                <span class="close" onclick="scheduleManager.closeProjectModal()">&times;</span>
+            </div>
+            <form id="projectForm" class="form">
+                <div class="form-group">
+                    <label for="projectNameInput">项目名称</label>
+                    <input type="text" id="projectNameInput" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="projectDescription">项目描述</label>
+                    <textarea id="projectDescription" rows="4" placeholder="请输入项目详细描述..."></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeProjectModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存项目</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 项目列表管理模态框 -->
+    <div id="projectListModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>项目管理</h2>
+                <span class="close" onclick="scheduleManager.closeProjectListModal()">&times;</span>
+            </div>
+            <div class="project-management">
+                <div class="project-list-header">
+                    <h3>项目列表</h3>
+                    <button id="addNewProjectBtn" class="btn btn-primary">添加新项目</button>
+                </div>
+                <div class="project-list-container" id="projectListContainer">
+                    <!-- 项目列表将通过JavaScript动态填充 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量导入模态框 -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>批量导入排班记录</h2>
+                <span class="close" onclick="scheduleManager.closeImportModal()">&times;</span>
+            </div>
+            <div class="import-content">
+                <div class="import-form">
+                    <div class="form-group">
+                        <label for="importDate">排班日期</label>
+                        <input type="date" id="importDate" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="importDataText">批量数据</label>
+                        <textarea id="importDataText" rows="10" placeholder="请输入批量数据，每行一条记录&#10;支持多种灵活格式：&#10;格式1：开心，17-18，sss（260），Jackson（408），微信群&#10;格式2：小佳，6-7 pm，sss（280），少（360），微信群&#10;格式3：小萍，ssss（300），2-3 pm，张（658），抖音&#10;&#10;所有格式可以混合使用！"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeImportModal()">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="scheduleManager.processImportData()">导入数据</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑模态框 -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑排班记录</h2>
+                <span class="close" onclick="scheduleManager.closeEditModal()">&times;</span>
+            </div>
+            <form id="editForm" class="form">
+                <div class="form-group">
+                    <label for="editEmployeeName">员工姓名</label>
+                    <select id="editEmployeeName" required>
+                        <option value="">请选择员工</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editScheduleDate">排班日期</label>
+                    <input type="date" id="editScheduleDate" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editStartTime">开始时间</label>
+                    <input type="time" id="editStartTime" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editEndTime">结束时间</label>
+                    <input type="time" id="editEndTime" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editProjectName">项目名称</label>
+                    <select id="editProjectName" required>
+                        <option value="">请选择项目</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editClientName">对接客户</label>
+                    <input type="text" id="editClientName" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editClientSource">客户来源渠道</label>
+                    <select id="editClientSource" required>
+                        <option value="">请选择来源渠道</option>
+                        <option value="小红书">小红书</option>
+                        <option value="微信群">微信群</option>
+                        <option value="tg">TG</option>
+                        <option value="抖音">抖音</option>
+                        <option value="视频号">视频号</option>
+                        <option value="美团">美团</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editPayment">客户付款金额 (元)</label>
+                    <input type="number" id="editPayment" min="0" step="0.01" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editCommission">员工提成 (元)</label>
+                    <input type="number" id="editCommission" min="0" step="0.01" required>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeEditModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 薪资档位添加/编辑模态框 -->
+    <div id="salaryTierModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="salaryTierModalTitle">添加薪资档位</h2>
+                <span class="close" onclick="scheduleManager.closeSalaryTierModal()">&times;</span>
+            </div>
+            <form id="salaryTierForm" class="form">
+                <div class="form-group">
+                    <label for="salaryTierName">档位名称</label>
+                    <input type="text" id="salaryTierName" placeholder="例如：1档、高级档位等" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="salaryTierAmount">薪资金额（元）</label>
+                    <input type="number" id="salaryTierAmount" min="0" step="0.01" placeholder="请输入薪资金额" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="salaryTierDescription">档位描述（可选）</label>
+                    <textarea id="salaryTierDescription" rows="3" placeholder="描述该档位的工作内容或要求..."></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeSalaryTierModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存档位</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 权限验证模态框 -->
+    <div id="salaryAuthModal" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>🔒 权限验证</h2>
+                <span class="close" onclick="scheduleManager.closeSalaryAuthModal()">&times;</span>
+            </div>
+            <div class="auth-content">
+                <p>此操作需要管理员权限，请输入密码：</p>
+                <form id="salaryAuthForm" class="form">
+                    <div class="form-group">
+                        <input type="password" id="salaryAuthPassword" placeholder="请输入管理密码" required>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeSalaryAuthModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">确认</button>
+                    </div>
+                </form>
+                <div class="auth-hint">
+                    <small>💡 默认密码：admin123（可在设置中修改）</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Google登录事件监听器
+        document.addEventListener("DOMContentLoaded", function() {
+            const googleLoginBtn = document.getElementById("googleLoginBtn");
+            const logoutBtn = document.getElementById("logoutBtn");
+            
+            if (googleLoginBtn) {
+                googleLoginBtn.addEventListener("click", function() {
+                    if (window.firebaseManager) {
+                        window.firebaseManager.signInWithGoogle();
+                    } else {
+                        console.error("firebaseManager not found");
+                        alert("Firebase管理器未初始化，请刷新页面重试");
+                    }
+                });
+            }
+            
+            if (logoutBtn) {
+                logoutBtn.addEventListener("click", function() {
+                    if (window.firebaseManager && confirm("确定要登出吗？")) {
+                        window.firebaseManager.signOut();
+                    }
+                });
+            }
+            
+            // 初始化时更新UI（如果FirebaseManager已存在）
+            setTimeout(() => {
+                if (window.firebaseManager) {
+                    window.firebaseManager.updateLoginUI();
+                }
+            }, 2000);
+        });
+    </script>
+    <script src="firebase-manager.js?v=2"></script>
+    <script src="firebase-data-manager.js?v=4"></script>
+    <script src="ai-analyst.js?v=2"></script>
+    <script src="script-clean.js?v=11"></script>
+    <script src="auth-guard.js"></script>
+</body>
+</html>

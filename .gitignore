@@ -1,0 +1,18 @@
+# 备份文件
+*.backup
+*.bak
+*.bak2
+*.before_auto
+*.with_error
+*.with_firebase
+*.clean
+check_line.txt
+
+# Shell 脚本（本地工具）
+*.sh
+
+# data 目录（运行时数据）
+data/
+
+# renders 目录
+renders/

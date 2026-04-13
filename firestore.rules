@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 拒绝所有未经身份验证的请求（默认拒绝）
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 团队共享数据：所有已登录用户都可以读写
+    match /team/{teamId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 测试连接用的临时集合（仅允许认证用户）
+    match /_test/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

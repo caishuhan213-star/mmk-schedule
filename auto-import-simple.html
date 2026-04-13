@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单全自动数据导入</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            text-align: center;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 50px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            margin: 20px 0;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .log {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            text-align: left;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .log-item {
+            padding: 4px 0;
+            color: #666;
+        }
+        
+        .log-item.success {
+            color: #28a745;
+        }
+        
+        .log-item.error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 简单全自动数据导入</h1>
+        <p>点击按钮开始自动导入3月2日番禺店排班数据</p>
+        
+        <button class="btn" onclick="startImport()">开始自动导入</button>
+        <button class="btn btn-success" onclick="window.location.href='index.html'">查看结果</button>
+        
+        <div class="log" id="log">
+            <div class="log-item">系统就绪，点击上方按钮开始导入</div>
+        </div>
+    </div>
+    
+    <script>
+        // 日志函数
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const item = document.createElement('div');
+            item.className = 'log-item ' + type;
+            item.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+            logEl.appendChild(item);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        // 自动导入函数
+        async function startImport() {
+            log('开始自动导入流程...', 'info');
+            
+            // 1. 打开主页面
+            log('正在打开排班管理主页面...', 'info');
+            const mainWindow = window.open('index.html', '_blank');
+            
+            if (!mainWindow) {
+                log('错误：无法打开新窗口，请允许弹出窗口', 'error');
+                alert('请允许弹出窗口，然后重试');
+                return;
+            }
+            
+            // 2. 等待主页面加载
+            log('等待主页面加载...', 'info');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // 3. 定义要导入的数据
+            const importData = [
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "19:00",
+                    endTime: "20:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "文爷（300半价卷后），微信群"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "20:00",
+                    endTime: "21:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "老九（458），微信群"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "21:00",
+                    endTime: "22:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "牛角包（279），微信群"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "23:00",
+                    endTime: "24:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "蛋蛋（558），微信群"
+                }
+            ];
+            
+            log(`准备导入 ${importData.length} 条记录`, 'info');
+            
+            // 4. 逐条导入数据
+            for (let i = 0; i < importData.length; i++) {
+                const data = importData[i];
+                log(`导入第 ${i + 1}/${importData.length} 条：${data.employeeName} ${data.startTime}-${data.endTime}`, 'info');
+                
+                try {
+                    // 在主页面设置表单数据
+                    mainWindow.document.getElementById('employeeName').value = data.employeeName;
+                    mainWindow.document.getElementById('scheduleDate').value = data.scheduleDate;
+                    mainWindow.document.getElementById('startTime').value = data.startTime;
+                    mainWindow.document.getElementById('endTime').value = data.endTime;
+                    mainWindow.document.getElementById('projectName').value = data.projectName;
+                    mainWindow.document.getElementById('price').value = data.price;
+                    mainWindow.document.getElementById('notes').value = data.notes;
+                    
+                    // 等待表单更新
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // 触发添加按钮
+                    mainWindow.document.getElementById('addScheduleBtn').click();
+                    
+                    log(`✅ 第 ${i + 1} 条记录导入成功`, 'success');
+                    
+                    // 等待下一条
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    
+                } catch (error) {
+                    log(`❌ 第 ${i + 1} 条记录导入失败：${error.message}`, 'error');
+                }
+            }
+            
+            // 5. 完成
+            log('🎉 所有数据导入完成！', 'success');
+            alert('✅ 自动导入完成！\n已成功导入4条排班记录。\n点击"查看结果"按钮查看导入的数据。');
+        }
+    </script>
+</body>
+</html>

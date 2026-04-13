@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据导入工具 - 排班管理系统</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .import-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .import-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .import-header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .data-preview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .data-item {
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .data-item:nth-child(odd) {
+            background: #f8f9fa;
+        }
+        
+        .import-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .btn-import {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .btn-import:hover {
+            background: #218838;
+        }
+        
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+        
+        .status-message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="import-container">
+        <div class="import-header">
+            <h1>📋 数据导入工具</h1>
+            <p>导入3月2日番禺店排班数据</p>
+        </div>
+        
+        <div class="data-preview">
+            <h3>待导入数据（4条记录）</h3>
+            <div class="data-item">
+                <span>小莹，19-20，SSS（260），文爷（300半价卷后），微信群</span>
+                <span class="badge">待导入</span>
+            </div>
+            <div class="data-item">
+                <span>小莹，20-21，SSS（260），老九（458），微信群</span>
+                <span class="badge">待导入</span>
+            </div>
+            <div class="data-item">
+                <span>小莹，21-22，SSS（260），牛角包（279），微信群</span>
+                <span class="badge">待导入</span>
+            </div>
+            <div class="data-item">
+                <span>小莹，23-24，SSS（260），蛋蛋（558），微信群</span>
+                <span class="badge">待导入</span>
+            </div>
+        </div>
+        
+        <div class="import-controls">
+            <button class="btn-import" onclick="importData()">开始导入</button>
+            <button class="btn-cancel" onclick="window.location.href='index.html'">返回主页面</button>
+        </div>
+        
+        <div id="statusMessage" class="status-message" style="display: none;"></div>
+    </div>
+    
+    <script src="script-clean.js?v=1772539869"></script>
+    <script>
+        // 导入数据函数
+        function importData() {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.style.display = 'block';
+            statusEl.className = 'status-message status-info';
+            statusEl.textContent = '正在准备导入数据...';
+            
+            // 检查scheduleManager是否就绪
+            if (typeof scheduleManager === 'undefined') {
+                statusEl.className = 'status-message status-error';
+                statusEl.textContent = '错误：scheduleManager未初始化，请先访问主页面';
+                return;
+            }
+            
+            // 定义导入数据
+            const importData = [
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "19:00",
+                    endTime: "20:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "文爷（300半价卷后），微信群",
+                    storeId: "panyu"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "20:00",
+                    endTime: "21:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "老九（458），微信群",
+                    storeId: "panyu"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "21:00",
+                    endTime: "22:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "牛角包（279），微信群",
+                    storeId: "panyu"
+                },
+                {
+                    employeeName: "小莹",
+                    scheduleDate: "2026-03-02",
+                    startTime: "23:00",
+                    endTime: "24:00",
+                    projectName: "SSS",
+                    price: "260",
+                    notes: "蛋蛋（558），微信群",
+                    storeId: "panyu"
+                }
+            ];
+            
+            let importedCount = 0;
+            const totalCount = importData.length;
+            
+            // 逐条导入
+            function importNext(index) {
+                if (index >= totalCount) {
+                    // 所有数据导入完成
+                    statusEl.className = 'status-message status-success';
+                    statusEl.innerHTML = `✅ 数据导入完成！<br>成功导入 ${importedCount} 条记录`;
+                    
+                    // 更新预览状态
+                    document.querySelectorAll('.data-item .badge').forEach(badge => {
+                        badge.textContent = '已导入';
+                        badge.style.color = '#28a745';
+                    });
+                    
+                    return;
+                }
+                
+                const data = importData[index];
+                statusEl.textContent = `正在导入第 ${index + 1}/${totalCount} 条记录：${data.employeeName} ${data.startTime}-${data.endTime}`;
+                
+                // 设置表单数据
+                document.getElementById('employeeName').value = data.employeeName;
+                document.getElementById('scheduleDate').value = data.scheduleDate;
+                document.getElementById('startTime').value = data.startTime;
+                document.getElementById('endTime').value = data.endTime;
+                document.getElementById('projectName').value = data.projectName;
+                document.getElementById('price').value = data.price;
+                document.getElementById('notes').value = data.notes;
+                
+                // 触发添加按钮（延迟执行以确保表单更新）
+                setTimeout(() => {
+                    document.getElementById('addScheduleBtn').click();
+                    importedCount++;
+                    
+                    // 更新当前项状态
+                    const badge = document.querySelectorAll('.data-item .badge')[index];
+                    badge.textContent = '已导入';
+                    badge.style.color = '#28a745';
+                    
+                    // 导入下一条
+                    setTimeout(() => importNext(index + 1), 500);
+                }, 300);
+            }
+            
+            // 开始导入
+            importNext(0);
+        }
+        
+        // 页面加载时检查
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof scheduleManager !== 'undefined') {
+                console.log('scheduleManager已就绪，可以导入数据');
+            } else {
+                console.warn('scheduleManager未初始化，可能需要先访问主页面');
+            }
+        });
+    </script>
+</body>
+</html>

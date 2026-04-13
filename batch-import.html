@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批量数据导入</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .import-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .control-group {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .control-group h3 {
+            margin-top: 0;
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .control-group input,
+        .control-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .control-group textarea {
+            height: 200px;
+            resize: vertical;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .preview-section {
+            margin: 30px 0;
+        }
+        
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .preview-table th {
+            background: #343a40;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .preview-table td {
+            padding: 10px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .preview-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        .preview-table tr:hover {
+            background: #e9ecef;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .progress-container {
+            margin: 20px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #28a745;
+            width: 0%;
+            transition: width 0.5s;
+        }
+        
+        .progress-text {
+            text-align: center;
+            font-weight: bold;
+            color: #495057;
+        }
+        
+        .log {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .log-item {
+            padding: 4px 0;
+            color: #666;
+        }
+        
+        .log-item.success {
+            color: #28a745;
+        }
+        
+        .log-item.error {
+            color: #dc3545;
+        }
+        
+        .log-item.info {
+            color: #17a2b8;
+        }
+        
+        .example {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .example code {
+            background: white;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 批量数据导入</h1>
+        
+        <div class="import-controls">
+            <div class="control-group">
+                <h3>1. 设置导入参数</h3>
+                <label for="importDate">排班日期</label>
+                <input type="date" id="importDate" value="2026-03-01">
+                
+                <label for="storeName">店铺名称（可选）</label>
+                <input type="text" id="storeName" placeholder="例如：番禺店">
+                
+                <div class="example">
+                    <strong>示例日期：</strong><br>
+                    • 3月1日 → 2026-03-01<br>
+                    • 今天 → 自动填充
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>2. 粘贴批量数据</h3>
+                <label for="batchData">数据格式（每行一条记录）</label>
+                <textarea id="batchData" placeholder="例如：
+小莹，SSS（260），19:00-20:00，文爷（300），微信群
+小芹，SSS（260），19:00-20:00，文爷（300），微信群
+小苏，SSS（260），20:00-21:00，老九（458），微信群"></textarea>
+                
+                <div class="example">
+                    <strong>数据格式：</strong><br>
+                    <code>员工，项目（价格），时间，备注</code><br>
+                    • 每行一条记录<br>
+                    • 中文逗号分隔<br>
+                    • 支持多行批量粘贴
+                </div>
+            </div>
+        </div>
+        
+        <div class="preview-section">
+            <h3>3. 数据预览</h3>
+            <div id="previewTableContainer">
+                <table class="preview-table" id="previewTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>员工</th>
+                            <th>项目</th>
+                            <th>价格</th>
+                            <th>时间</th>
+                            <th>备注</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewTableBody">
+                        <!-- 预览数据将在这里显示 -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="previewStats" style="margin-top: 10px; text-align: right; color: #6c757d;"></div>
+        </div>
+        
+        <div class="progress-container" id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">0%</div>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn" onclick="parseBatchData()">解析数据</button>
+            <button class="btn btn-success" onclick="importBatchData()" id="importBtn" disabled>批量导入</button>
+            <button class="btn btn-warning" onclick="testImport()">测试导入</button>
+            <button class="btn btn-danger" onclick="clearAll()">清空所有</button>
+            <button class="btn" onclick="window.location.href='index.html'">查看结果</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="log" id="log">
+            <div class="log-item">批量导入系统就绪</div>
+            <div class="log-item info">请先设置日期并粘贴数据，然后点击"解析数据"</div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局变量
+        let parsedRecords = [];
+        let isImporting = false;
+        
+        // 日志函数
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const item = document.createElement('div');
+            item.className = 'log-item ' + type;
+            item.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+            logEl.appendChild(item);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        // 显示状态
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status status-' + type;
+        }
+        
+        // 更新进度
+        function updateProgress(percent, message) {
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const progressContainer = document.getElementById('progressContainer');
+            
+            progressContainer.style.display = 'block';
+            progressFill.style.width = percent + '%';
+            progressText.textContent = message || percent + '%';
+        }
+        
+        // 解析单条数据
+        function parseSingleRecord(line, lineNumber, date) {
+            try {
+                // 清理数据
+                line = line.trim();
+                if (!line) return null;
+                
+                // 解析格式：小莹，SSS（260），19:00-20:00，文爷（300），微信群
+                const parts = line.split('，');
+                
+                if (parts.length < 3) {
+                    throw new Error(`第${lineNumber}行：数据格式不正确，至少需要3个部分（员工，项目，时间）`);
+                }
+                
+                // 解析员工
+                const employee = parts[0].trim();
+                if (!employee) {
+                    throw new Error(`第${lineNumber}行：员工姓名不能为空`);
+                }
+                
+                // 解析项目和价格：SSS（260）
+                const projectPart = parts[1].trim();
+                const projectMatch = projectPart.match(/^([^(]+)\((\d+)\)$/);
+                if (!projectMatch) {
+                    throw new Error(`第${lineNumber}行：项目格式不正确，应为：项目名（价格）`);
+                }
+                const project = projectMatch[1].trim();
+                const price = projectMatch[2].trim();
+                
+                // 解析时间：19:00-20:00
+                const timePart = parts[2].trim();
+                const timeMatch = timePart.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+                if (!timeMatch) {
+                    throw new Error(`第${lineNumber}行：时间格式不正确，应为：HH:MM-HH:MM`);
+                }
+                
+                const startTime = timeMatch[1].padStart(2, '0') + ':' + timeMatch[2];
+                const endTime = timeMatch[3].padStart(2, '0') + ':' + timeMatch[4];
+                
+                // 解析备注（剩余部分）
+                let notes = '';
+                if (parts.length > 3) {
+                    notes = parts.slice(3).join('，').trim();
+                }
+                
+                // 获取店铺名称
+                const storeName = document.getElementById('storeName').value.trim();
+                
+                return {
+                    lineNumber: lineNumber,
+                    employeeName: employee,
+                    scheduleDate: date,
+                    startTime: startTime,
+                    endTime: endTime,
+                    projectName: project,
+                    price: price,
+                    notes: notes,
+                    storeName: storeName,
+                    status: '待导入',
+                    originalLine: line
+                };
+                
+            } catch (error) {
+                return {
+                    lineNumber: lineNumber,
+                    error: error.message,
+                    originalLine: line,
+                    status: '解析失败'
+                };
+            }
+        }
+        
+        // 解析批量数据
+        function parseBatchData() {
+            const batchData = document.getElementById('batchData').value.trim();
+            const importDate = document.getElementById('importDate').value;
+            
+            if (!batchData) {
+                showStatus('请粘贴批量数据', 'error');
+                return;
+            }
+            
+            if (!importDate) {
+                showStatus('请选择排班日期', 'error');
+                return;
+            }
+            
+            log('开始解析批量数据...', 'info');
+            showStatus('正在解析数据...', 'info');
+            
+            // 清空预览表格
+            const tableBody = document.getElementById('previewTableBody');
+            tableBody.innerHTML = '';
+            
+            // 按行分割数据
+            const lines = batchData.split('\n');
+            parsedRecords = [];
+            let successCount = 0;
+            let errorCount = 0;
+            
+            // 解析每一行
+            lines.forEach((line, index) => {
+                const record = parseSingleRecord(line, index + 1, importDate);
+                
+                if (record) {
+                    if (record.error) {
+                        errorCount++;
+                        // 错误行显示为红色
+                        tableBody.innerHTML += `
+                            <tr style="background-color: #f8d7da;">
+                                <td>${index + 1}</td>
+                                <td colspan="6" style="color: #721c24;">
+                                    ❌ ${record.error}<br>
+                                    <small>原始数据: ${record.originalLine}</small>
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        successCount++;
+                        parsedRecords.push(record);
+                        // 成功行正常显示
+                        tableBody.innerHTML += `
+                            <tr>
+                                <td>${index + 1}</td>
+                                <td>${record.employeeName}</td>
+                                <td>${record.projectName}</td>
+                                <td>${record.price}</td>
+                                <td>${record.startTime}-${record.endTime}</td>
+                                <td>${record.notes || '-'}</td>
+                                <td><span class="status-badge" style="color: #28a745;">${record.status}</span></td>
+                            </tr>
+                        `;
+                    }
+                }
+            });
+            
+            // 更新统计信息
+            document.getElementById('previewStats').innerHTML = `
+                共解析 ${lines.length} 行，成功 ${successCount} 条，失败 ${errorCount} 条
+            `;
+            
+            // 更新导入按钮状态
+            const importBtn = document.getElementById('importBtn');
+            if (successCount > 0) {
+                importBtn.disabled = false;
+                importBtn.textContent = `批量导入 (${successCount} 条)`;
+                showStatus(`解析完成：成功 ${successCount} 条，失败 ${errorCount} 条`, 'success');
+                log(`✅ 批量解析完成：成功 ${successCount} 条，失败 ${errorCount} 条`, 'success');
+            } else {
+                importBtn.disabled = true;
+                importBtn.textContent = '批量导入';
+                showStatus('没有成功解析的数据', 'error');
+                log('❌ 没有成功解析的数据', 'error');
+            }
+        }
+        
+        // 导入单条记录
+        async function importSingleRecord(record, mainWindow) {
+            return new Promise((resolve) => {
+                try {
+                    log(`导入：${record.employeeName} ${record.startTime}-${record.endTime}`, 'info');
+                    
+                    // 在主页面设置表单数据
+                    mainWindow.document.getElementById('employeeName').value = record.employeeName;
+                    mainWindow.document.getElementById('scheduleDate').value = record.scheduleDate;
+                    mainWindow.document.getElementById('startTime').value = record.startTime;
+                    mainWindow.document.getElementById('endTime').value = record.endTime;
+                    mainWindow.document.getElementById('projectName').value = record.projectName;
+                    mainWindow.document.getElementById('price').value = record.price;
+                    mainWindow.document.getElementById('notes').value = record.notes;
+                    
+                    // 等待表单更新
+                    setTimeout(() => {
+                        // 触发添加按钮
+                        mainWindow.document.getElementById('addScheduleBtn').click();
+                        record.status = '已导入';
+                        log(`✅ 导入成功：${record.employeeName}`, 'success');
+                        resolve(true);
+                    }, 300);
+                    
+                } catch (error) {
+                    record.status = '导入失败';
+                    record.error = error.message;
+                    log(`❌ 导入失败：${record.employeeName} - ${error.message}`, 'error');
+                    resolve(false);
+                }
+            });
+        }
+        
+        // 批量导入数据
+        async function importBatchData() {
+            if (isImporting) {
+                showStatus('正在导入中，请稍候...', 'info');
+                return;
+            }
+            
+            if (parsedRecords.length === 0) {
+                showStatus('没有可导入的数据', 'error');
+                return;
+            }
+            
+            log('开始批量导入数据...', 'info');
+            showStatus('正在打开排班系统...', 'info');
+            isImporting = true;
+            
+            // 打开主页面
+            const mainWindow = window.open('index.html', '_blank');
+            if (!mainWindow) {
+                showStatus('请允许弹出窗口，然后重试', 'error');
+                log('错误：无法打开新窗口', 'error');
+                isImporting = false;
+                return;
+            }
+            
+            log('排班系统已打开，等待加载...', 'info');
+            
+            // 等待主页面加载
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            let importedCount = 0;
+            const totalCount = parsedRecords.length;
+            
+            // 显示进度条
+            updateProgress(0, '准备导入...');
+            
+            // 逐条导入
+            for (let i = 0; i < parsedRecords.length; i++) {
+                const record = parsedRecords[i];
+                const progress = Math.floor((i / totalCount) * 100);
+                
+                updateProgress(progress, `导入中 ${i + 1}/${totalCount}`);
+                
+                // 导入当前记录
+                const success = await importSingleRecord(record, mainWindow);
+                if (success) {
+                    importedCount++;
+                }
+                
+                // 更新表格状态
+                updateTableStatus(i, success ? '已导入' : '导入失败');
+                
+                // 等待下一条（避免过快）
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
+            
+            // 完成
+            updateProgress(100, '导入完成');
+            showStatus(`批量导入完成！成功 ${importedCount}/${totalCount} 条`, 'success');
+            log(`🎉 批量导入完成！成功 ${importedCount}/${totalCount} 条`, 'success');
+            
+            isImporting = false;
+            
+            // 提示用户
+            setTimeout(() => {
+                alert(`✅ 批量导入完成！\n成功导入 ${importedCount} 条记录\n失败 ${totalCount - importedCount} 条`);
+            }, 500);
+        }
+        
+        // 更新表格状态
+        function updateTableStatus(index, status) {
+            const tableRows = document.querySelectorAll('#previewTableBody tr');
+            if (tableRows[index]) {
+                const statusCell = tableRows[index].querySelector('td:last-child');
+                if (statusCell) {
+                    const color = status === '已导入' ? '#28a745' : '#dc3545';
+                    statusCell.innerHTML = `<span style="color: ${color}; font-weight: bold;">${status}</span>`;
+                }
+            }
+        }
+        
+        // 测试导入（只导入第一条）
+        async function testImport() {
+            if (parsedRecords.length === 0) {
+                showStatus('请先解析数据', 'error');
+                return;
+            }
+            
+            log('开始测试导入（第一条记录）...', 'info');
+            showStatus('测试导入中...', 'info');
+            
+            // 打开主页面
+            const mainWindow = window.open('index.html', '_blank');
+            if (!mainWindow) {
+                showStatus('请允许弹出窗口', 'error');
+                return;
+            }
+            
+            // 等待主页面加载
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // 导入第一条记录
+            const testRecord = parsedRecords[0];
+            const success = await importSingleRecord(testRecord, mainWindow);
+            
+            if (success) {
+                showStatus('测试导入成功！', 'success');
+                log('✅ 测试导入成功，可以继续批量导入', 'success');
+            } else {
+                showStatus('测试导入失败，请检查数据格式', 'error');
+            }
+        }
+        
+        // 清空所有
+        function clearAll() {
+            document.getElementById('batchData').value = '';
+            document.getElementById('previewTableBody').innerHTML = '';
+            document.getElementById('previewStats').innerHTML = '';
+            document.getElementById('importBtn').disabled = true;
+            document.getElementById('importBtn').textContent = '批量导入';
+            document.getElementById('progressContainer').style.display = 'none';
+            
+            parsedRecords = [];
+            isImporting = false;
+            
+            const logEl = document.getElementById('log');
+            logEl.innerHTML = '<div class="log-item">数据已清空</div>';
+            
+            showStatus('所有数据已清空', 'success');
+        }
+        
+        // 页面加载时设置默认日期
+        document.addEventListener('DOMContentLoaded', function() {
+            // 如果没有设置日期，默认为今天
+            const dateInput = document.getElementById('importDate');
+            if (!dateInput.value) {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                dateInput.value = `${year}-${month}-${day}`;
+            }
+            
+            // 添加示例数据
+            document.getElementById('batchData').value = `小莹，SSS（260），19:00-20:00，文爷（300），微信群
+小芹，SSS（260），19:00-20:00，文爷（300），微信群
+小苏，SSS（260），20:00-21:00，老九（458），微信群`;
+            
+            log('批量导入系统已就绪，已填充示例数据', 'info');
+            log('请修改日期和数据，然后点击"解析数据"', 'info');
+        });
+    </script>
+</body>
+</html>
