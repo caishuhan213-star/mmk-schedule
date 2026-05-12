@@ -9,6 +9,9 @@ class FirebaseDataManager {
         this._readyCallbacks = [];
         this._isReady = false;
         this._currentUser = null;
+        this._collectionStates = new Map();
+        this._commitChain = Promise.resolve();
+        this._saveDebounceMs = 250;
         // 导入模式：true 时 onSnapshot 回调不更新内存数据（防止批量写入时被旧快照覆盖）
         this._importing = false;
 
@@ -87,6 +90,310 @@ class FirebaseDataManager {
         return db.collection(`team/${this.teamId}/stores/${storeId}/${collectionName}`);
     }
 
+    _collectionKey(storeId, collectionName) {
+        return `${storeId || 'default'}::${collectionName}`;
+    }
+
+    _getCollectionState(storeId, collectionName) {
+        const key = this._collectionKey(storeId, collectionName);
+        if (!this._collectionStates.has(key)) {
+            this._collectionStates.set(key, {
+                docs: new Map(),
+                ready: false,
+                saving: false,
+                timer: null,
+                pendingPayload: null,
+                waiters: [],
+            });
+        }
+        return this._collectionStates.get(key);
+    }
+
+    _stripInternalFields(data) {
+        const { updatedAt, syncedAt, userId, storeId, ...item } = data || {};
+        return item;
+    }
+
+    _stableStringify(value) {
+        if (value === null || typeof value !== 'object') {
+            return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+            return `[${value.map(item => this._stableStringify(item)).join(',')}]`;
+        }
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${this._stableStringify(value[key])}`).join(',')}}`;
+    }
+
+    async _primeCollectionState(ref, state) {
+        if (state.ready) return;
+
+        const snapshot = await ref.get();
+        state.docs = new Map();
+        snapshot.forEach(doc => {
+            state.docs.set(doc.id, this._stripInternalFields(doc.data()));
+        });
+        state.ready = true;
+    }
+
+    _updateCollectionStateFromSnapshot(storeId, collectionName, snapshot) {
+        const state = this._getCollectionState(storeId, collectionName);
+        const docs = new Map();
+        const items = [];
+
+        snapshot.forEach(doc => {
+            const item = this._stripInternalFields(doc.data());
+            docs.set(doc.id, item);
+            items.push(item);
+        });
+
+        state.docs = docs;
+        state.ready = true;
+        return items;
+    }
+
+    async _commitOperations(operations) {
+        if (operations.length === 0) return;
+
+        const db = this._getFirestore();
+        const BATCH_LIMIT = 450;
+
+        for (let i = 0; i < operations.length; i += BATCH_LIMIT) {
+            const batch = db.batch();
+            operations.slice(i, i + BATCH_LIMIT).forEach(operation => {
+                if (operation.type === 'set') {
+                    batch.set(operation.ref, operation.data);
+                } else {
+                    batch.delete(operation.ref);
+                }
+            });
+            await batch.commit();
+        }
+    }
+
+    _queueCommitTask(task) {
+        const run = this._commitChain.then(task, task);
+        this._commitChain = run.catch(() => {});
+        return run;
+    }
+
+    _scheduleCollectionSave(collectionName, storeId, payload) {
+        const state = this._getCollectionState(storeId, collectionName);
+
+        if (state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+        }
+
+        state.pendingPayload = payload;
+
+        const promise = new Promise((resolve, reject) => {
+            state.waiters.push({ resolve, reject });
+        });
+
+        state.timer = setTimeout(() => {
+            state.timer = null;
+            this._flushCollectionSave(collectionName, storeId).catch(error => {
+                console.error(`FirebaseDataManager: 刷新 ${collectionName} 保存队列失败:`, error);
+            });
+        }, this._saveDebounceMs);
+
+        return promise;
+    }
+
+    async _setDocument(collectionName, item, storeId) {
+        if (!this._canOperate()) {
+            console.warn(`FirebaseDataManager: 未登录，跳过保存 ${collectionName} 单条记录`);
+            return;
+        }
+
+        const ref = this._collectionRef(storeId, collectionName);
+        if (!ref) return;
+
+        const docId = this._generateDocId(item);
+        const cleanItem = {
+            ...item,
+            id: item.id || docId,
+        };
+        const state = this._getCollectionState(storeId, collectionName);
+
+        if (state.pendingPayload) {
+            state.pendingPayload.set(docId, cleanItem);
+            return this._scheduleCollectionSave(collectionName, storeId, state.pendingPayload);
+        }
+
+        if (state.ready && this._stableStringify(state.docs.get(docId)) === this._stableStringify(cleanItem)) {
+            return;
+        }
+
+        await this._queueCommitTask(() => this._commitOperations([{
+            type: 'set',
+            ref: ref.doc(docId),
+            data: {
+                ...cleanItem,
+                updatedAt: Date.now(),
+            },
+        }]));
+
+        if (state.ready) {
+            state.docs.set(docId, cleanItem);
+        }
+
+        console.log(`FirebaseDataManager: 已保存 ${collectionName}/${docId}`);
+    }
+
+    async _setDocuments(collectionName, items, storeId) {
+        if (!this._canOperate()) {
+            console.warn(`FirebaseDataManager: 未登录，跳过保存 ${collectionName} 多条记录`);
+            return;
+        }
+
+        const ref = this._collectionRef(storeId, collectionName);
+        if (!ref) return;
+
+        const itemArray = Array.isArray(items) ? items : [];
+        if (itemArray.length === 0) return;
+
+        const state = this._getCollectionState(storeId, collectionName);
+
+        if (state.pendingPayload) {
+            itemArray.forEach(item => {
+                const docId = this._generateDocId(item);
+                state.pendingPayload.set(docId, {
+                    ...item,
+                    id: item.id || docId,
+                });
+            });
+            return this._scheduleCollectionSave(collectionName, storeId, state.pendingPayload);
+        }
+
+        const now = Date.now();
+        const cleanItems = [];
+        const operations = [];
+
+        itemArray.forEach(item => {
+            const docId = this._generateDocId(item);
+            const cleanItem = {
+                ...item,
+                id: item.id || docId,
+            };
+
+            cleanItems.push([docId, cleanItem]);
+
+            if (!state.ready || this._stableStringify(state.docs.get(docId)) !== this._stableStringify(cleanItem)) {
+                operations.push({
+                    type: 'set',
+                    ref: ref.doc(docId),
+                    data: {
+                        ...cleanItem,
+                        updatedAt: now,
+                    },
+                });
+            }
+        });
+
+        await this._queueCommitTask(() => this._commitOperations(operations));
+
+        if (state.ready) {
+            cleanItems.forEach(([docId, cleanItem]) => state.docs.set(docId, cleanItem));
+        }
+
+        console.log(`FirebaseDataManager: 已保存 ${collectionName} ${operations.length} 条变更`);
+    }
+
+    async _deleteDocument(collectionName, docId, storeId) {
+        if (!this._canOperate()) {
+            console.warn(`FirebaseDataManager: 未登录，跳过删除 ${collectionName} 单条记录`);
+            return;
+        }
+
+        const ref = this._collectionRef(storeId, collectionName);
+        if (!ref || !docId) return;
+
+        const state = this._getCollectionState(storeId, collectionName);
+
+        if (state.pendingPayload) {
+            state.pendingPayload.delete(String(docId));
+            return this._scheduleCollectionSave(collectionName, storeId, state.pendingPayload);
+        }
+
+        if (state.ready && !state.docs.has(String(docId))) {
+            return;
+        }
+
+        await this._queueCommitTask(() => this._commitOperations([{
+            type: 'delete',
+            ref: ref.doc(String(docId)),
+        }]));
+
+        if (state.ready) {
+            state.docs.delete(String(docId));
+        }
+
+        console.log(`FirebaseDataManager: 已删除 ${collectionName}/${docId}`);
+    }
+
+    async _flushCollectionSave(collectionName, storeId) {
+        const state = this._getCollectionState(storeId, collectionName);
+        if (state.saving || !state.pendingPayload) return;
+
+        const payload = state.pendingPayload;
+        const waiters = state.waiters.splice(0);
+        state.pendingPayload = null;
+        state.saving = true;
+
+        try {
+            const ref = this._collectionRef(storeId, collectionName);
+            if (!ref) {
+                throw new Error(`Firestore 集合不可用: ${collectionName}`);
+            }
+
+            await this._primeCollectionState(ref, state);
+
+            const now = Date.now();
+            const operations = [];
+
+            payload.forEach((item, docId) => {
+                const existing = state.docs.get(docId);
+                if (this._stableStringify(existing) !== this._stableStringify(item)) {
+                    operations.push({
+                        type: 'set',
+                        ref: ref.doc(docId),
+                        data: {
+                            ...item,
+                            updatedAt: now,
+                        },
+                    });
+                }
+            });
+
+            state.docs.forEach((_, existingId) => {
+                if (!payload.has(existingId)) {
+                    operations.push({
+                        type: 'delete',
+                        ref: ref.doc(existingId),
+                    });
+                }
+            });
+
+            await this._queueCommitTask(() => this._commitOperations(operations));
+            state.docs = new Map(payload);
+            state.ready = true;
+
+            console.log(`FirebaseDataManager: ${collectionName} 保存完成，写入/删除 ${operations.length} 项`);
+            waiters.forEach(({ resolve }) => resolve());
+        } catch (error) {
+            waiters.forEach(({ reject }) => reject(error));
+            throw error;
+        } finally {
+            state.saving = false;
+            if (state.pendingPayload) {
+                this._flushCollectionSave(collectionName, storeId).catch(error => {
+                    console.error(`FirebaseDataManager: 继续刷新 ${collectionName} 保存队列失败:`, error);
+                });
+            }
+        }
+    }
+
     // 生成文档 ID
     _generateDocId(item) {
         if (item.id) return String(item.id);
@@ -100,65 +407,18 @@ class FirebaseDataManager {
             return;
         }
 
-        const ref = this._collectionRef(storeId, collectionName);
-        if (!ref) return;
+        const itemArray = Array.isArray(items) ? items : [];
+        const payload = new Map();
 
-        try {
-            // 获取现有文档以进行差异更新（删除不再存在的文档）
-            const existingSnapshot = await ref.get();
-            const existingIds = new Set();
-            existingSnapshot.forEach(doc => existingIds.add(doc.id));
+        itemArray.forEach(item => {
+            const docId = this._generateDocId(item);
+            payload.set(docId, {
+                ...item,
+                id: item.id || docId,
+            });
+        });
 
-            // 处理要保存的项目
-            const itemArray = Array.isArray(items) ? items : [];
-            const newIds = new Set();
-
-            // Firestore batch 每次最多 500 条操作，需要分批
-            const BATCH_LIMIT = 499; // 留一个给可能的删除
-            let batchCount = 0;
-            let batch = this._getFirestore().batch();
-
-            // 写入/更新所有项目
-            for (const item of itemArray) {
-                const docId = this._generateDocId(item);
-                newIds.add(docId);
-                const docRef = ref.doc(docId);
-                batch.set(docRef, {
-                    ...item,
-                    updatedAt: Date.now()
-                });
-                batchCount++;
-
-                if (batchCount >= BATCH_LIMIT) {
-                    await batch.commit();
-                    batch = this._getFirestore().batch();
-                    batchCount = 0;
-                }
-            }
-
-            // 删除不再存在的文档
-            for (const existingId of existingIds) {
-                if (!newIds.has(existingId)) {
-                    batch.delete(ref.doc(existingId));
-                    batchCount++;
-
-                    if (batchCount >= BATCH_LIMIT) {
-                        await batch.commit();
-                        batch = this._getFirestore().batch();
-                        batchCount = 0;
-                    }
-                }
-            }
-
-            if (batchCount > 0) {
-                await batch.commit();
-            }
-
-            console.log(`FirebaseDataManager: 已保存 ${itemArray.length} 条 ${collectionName} 到 Firestore`);
-        } catch (error) {
-            console.error(`FirebaseDataManager: 保存 ${collectionName} 失败:`, error);
-            throw error;
-        }
+        return this._scheduleCollectionSave(collectionName, storeId, payload);
     }
 
     // ====== 通用 load 方法 ======
@@ -175,10 +435,7 @@ class FirebaseDataManager {
             const snapshot = await ref.get();
             const items = [];
             snapshot.forEach(doc => {
-                const data = doc.data();
-                // 移除内部字段
-                const { updatedAt, ...item } = data;
-                items.push(item);
+                items.push(this._stripInternalFields(doc.data()));
             });
             console.log(`FirebaseDataManager: 从 Firestore 加载了 ${items.length} 条 ${collectionName}`);
             return items;
@@ -191,6 +448,22 @@ class FirebaseDataManager {
     // ====== 各集合的 save 方法 ======
     async saveSchedules(schedules, storeId) {
         return this._saveCollection('schedules', schedules, storeId);
+    }
+
+    async addSchedule(schedule, storeId) {
+        return this._setDocument('schedules', schedule, storeId);
+    }
+
+    async updateSchedule(schedule, storeId) {
+        return this._setDocument('schedules', schedule, storeId);
+    }
+
+    async updateSchedules(schedules, storeId) {
+        return this._setDocuments('schedules', schedules, storeId);
+    }
+
+    async deleteSchedule(scheduleId, storeId) {
+        return this._deleteDocument('schedules', scheduleId, storeId);
     }
 
     async saveEmployees(employees, storeId) {
@@ -289,18 +562,13 @@ class FirebaseDataManager {
                 if (!ref) continue;
 
                 const unsubscribe = ref.onSnapshot((snapshot) => {
+                    const items = this._updateCollectionStateFromSnapshot(storeId, collectionName, snapshot);
+
                     // 导入模式下跳过 onSnapshot 回调，防止旧快照覆盖内存数据
                     if (this._importing) {
                         console.log(`FirebaseDataManager: 导入模式，跳过 onSnapshot ${collectionName}`);
                         return;
                     }
-
-                    const items = [];
-                    snapshot.forEach(doc => {
-                        const data = doc.data();
-                        const { updatedAt, ...item } = data;
-                        items.push(item);
-                    });
 
                     // salaryTiers 特殊处理：还原对象格式
                     if (collectionName === 'salaryTiers') {

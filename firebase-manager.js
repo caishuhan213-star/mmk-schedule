@@ -242,21 +242,12 @@ class FirebaseManager {
         
         try {
             console.log('测试Firestore连接...');
-            // 创建一个测试文档
-            const testRef = this.firestore.collection('_test').doc('connection');
-            await testRef.set({
-                test: true,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                userId: this.user.uid,
-                email: this.user.email
-            });
+            // 使用轻量读取测试连接，避免每次登录都写入/删除文档触发额外同步压力
+            await this.firestore.collection(`team/${this.teamId}/stores`).limit(1).get();
             
             console.log('✅ Firestore连接测试成功');
             this.syncStatus = 'ready';
             this.showSyncStatus();
-            
-            // 清理测试文档
-            await testRef.delete();
             
         } catch (error) {
             console.error('❌ Firestore连接测试失败:', error);

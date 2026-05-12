@@ -771,7 +771,9 @@ class ScheduleManager {
                 const hasData = isArray ? localData.length > 0 : (localData && Object.keys(localData).length > 0);
                 if (hasData) {
                     console.log(`onSnapshot ${collectionName}: Firestore 为空，从 localStorage 迁移 ${isArray ? localData.length : 1} 条数据`);
-                    saveFn.call(this);
+                    Promise.resolve(saveFn.call(this)).catch(error => {
+                        console.error(`迁移 ${collectionName} 到 Firestore 失败:`, error);
+                    });
                     return; // 迁移后 onSnapshot 会再次触发，届时会走下面的更新逻辑
                 }
             }
@@ -803,7 +805,9 @@ class ScheduleManager {
                     const local = this.salaryTiers;
                     if (local && Object.keys(local).length > 0) {
                         console.log('onSnapshot salaryTiers: Firestore 为空，从 localStorage 迁移');
-                        this.saveSalaryTiersData();
+                        this.saveSalaryTiersData().catch(error => {
+                            console.error('迁移 salaryTiers 到 Firestore 失败:', error);
+                        });
                         return;
                     }
                 }
@@ -2286,8 +2290,10 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         // 添加到数组
         this.schedules.push(formData);
 
-        // 保存到本地存储
-        this.saveSchedules();
+        // 日常新增只写入这一条 Firestore 文档，避免重写整个 schedules 集合
+        this.saveScheduleItem(formData, 'add').catch(error => {
+            console.error('保存新增排班到 Firestore 失败:', error);
+        });
 
         // 智能显示逻辑：如果有筛选条件，保持筛选状态；否则显示新添加的记录
         this.handlePostAddDisplay(formData);
@@ -2479,7 +2485,9 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
     deleteSchedule(id) {
         if (confirm('确定要删除这条排班记录吗？')) {
             this.schedules = this.schedules.filter(schedule => schedule.id !== id);
-            this.saveSchedules();
+            this.deleteScheduleItem(id).catch(error => {
+                console.error('从 Firestore 删除排班失败:', error);
+            });
             this.renderTableWithCurrentFilter();
             this.updateStats();
             this.showSuccessMessage('排班记录删除成功！');
@@ -2538,14 +2546,17 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         // 更新数据
         const scheduleIndex = this.schedules.findIndex(s => s.id === this.editingId);
         if (scheduleIndex !== -1) {
-            this.schedules[scheduleIndex] = {
+            const updatedSchedule = {
                 ...this.schedules[scheduleIndex],
                 ...formData,
                 updatedAt: new Date().toISOString()
             };
+            this.schedules[scheduleIndex] = updatedSchedule;
 
-            // 保存到本地存储
-            this.saveSchedules();
+            // 日常编辑只更新这一条 Firestore 文档
+            this.saveScheduleItem(updatedSchedule, 'update').catch(error => {
+                console.error('保存修改后的排班到 Firestore 失败:', error);
+            });
 
             // 重新渲染表格和统计
             this.renderTableWithCurrentFilter();
@@ -3716,7 +3727,49 @@ ${photoStatus}`;
     // 保存排班数据到 Firestore（直接写入，无需 IndexedDB 中转）
     async saveSchedules() {
         await this.dbManager.saveSchedules(this.schedules, this.currentStoreId);
+        this.cacheSchedules();
+    }
+
+    cacheSchedules() {
         try { localStorage.setItem(this.getStorageKey('schedules'), JSON.stringify(this.schedules)); } catch (e) {}
+    }
+
+    async saveScheduleItem(schedule, mode = 'update') {
+        this.cacheSchedules();
+
+        if (mode === 'add' && this.dbManager.addSchedule) {
+            await this.dbManager.addSchedule(schedule, this.currentStoreId);
+            return;
+        }
+
+        if (this.dbManager.updateSchedule) {
+            await this.dbManager.updateSchedule(schedule, this.currentStoreId);
+            return;
+        }
+
+        await this.dbManager.saveSchedules(this.schedules, this.currentStoreId);
+    }
+
+    async saveScheduleItems(schedules) {
+        this.cacheSchedules();
+
+        if (this.dbManager.updateSchedules) {
+            await this.dbManager.updateSchedules(schedules, this.currentStoreId);
+            return;
+        }
+
+        await this.dbManager.saveSchedules(this.schedules, this.currentStoreId);
+    }
+
+    async deleteScheduleItem(scheduleId) {
+        this.cacheSchedules();
+
+        if (this.dbManager.deleteSchedule) {
+            await this.dbManager.deleteSchedule(scheduleId, this.currentStoreId);
+            return;
+        }
+
+        await this.dbManager.saveSchedules(this.schedules, this.currentStoreId);
     }
 
     // 导出排班数据到文件（手动导出）
@@ -4551,12 +4604,14 @@ ${photoStatus}`;
     // 更新排班记录中的员工姓名
     updateScheduleEmployeeNames(oldName, newName) {
         let updatedCount = 0;
+        const changedSchedules = [];
         
         // 更新排班记录中的员工姓名
         this.schedules.forEach(schedule => {
             if (schedule.employeeName === oldName) {
                 schedule.employeeName = newName;
                 schedule.updatedAt = new Date().toISOString();
+                changedSchedules.push(schedule);
                 updatedCount++;
             }
         });
@@ -4569,8 +4624,8 @@ ${photoStatus}`;
             }
         });
         
-        // 保存更新后的数据
-        this.saveSchedules();
+        // 只保存受影响的排班记录，避免员工改名时重写整个 schedules 集合
+        this.saveScheduleItems(changedSchedules).catch(err => console.error('保存关联排班失败:', err));
         this.saveAttendanceFees().catch(err => console.error('保存坐班费用失败:', err));
         
         // 更新显示
