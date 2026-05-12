@@ -12,6 +12,7 @@ class FirebaseDataManager {
         this._collectionStates = new Map();
         this._commitChain = Promise.resolve();
         this._saveDebounceMs = 250;
+        this._jlPriceTableUnsubscribe = null;
         // 导入模式：true 时 onSnapshot 回调不更新内存数据（防止批量写入时被旧快照覆盖）
         this._importing = false;
 
@@ -46,6 +47,7 @@ class FirebaseDataManager {
                     if (!user) {
                         this._isReady = false;
                         this.unsubscribeAll();
+                        this.unsubscribeJlPriceTable();
                     }
                 });
             } else {
@@ -92,6 +94,12 @@ class FirebaseDataManager {
 
     _collectionKey(storeId, collectionName) {
         return `${storeId || 'default'}::${collectionName}`;
+    }
+
+    _settingsDocRef(docId) {
+        const db = this._getFirestore();
+        if (!db) return null;
+        return db.collection(`team/${this.teamId}/settings`).doc(docId);
     }
 
     _getCollectionState(storeId, collectionName) {
@@ -534,6 +542,74 @@ class FirebaseDataManager {
         return items.length > 0 ? items : {};
     }
 
+    async saveJlPriceTable(rows) {
+        if (!this._canOperate()) {
+            console.warn('FirebaseDataManager: 未登录，跳过保存接龙价格表');
+            return;
+        }
+
+        const ref = this._settingsDocRef('jlPriceTable');
+        if (!ref) return;
+
+        const cleanRows = Array.isArray(rows) ? rows : [];
+        await ref.set({
+            rows: cleanRows,
+            updatedAt: Date.now(),
+            userId: this._currentUser ? this._currentUser.uid : null,
+        }, { merge: true });
+
+        console.log(`FirebaseDataManager: 已保存接龙价格表 ${cleanRows.length} 条`);
+    }
+
+    async loadJlPriceTable() {
+        if (!this._canOperate()) {
+            console.warn('FirebaseDataManager: 未登录，跳过加载接龙价格表');
+            return [];
+        }
+
+        const ref = this._settingsDocRef('jlPriceTable');
+        if (!ref) return [];
+
+        try {
+            const doc = await ref.get();
+            const exists = typeof doc.exists === 'function' ? doc.exists() : doc.exists;
+            if (!exists) return [];
+            const data = doc.data() || {};
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+            console.log(`FirebaseDataManager: 从 Firestore 加载了 ${rows.length} 条接龙价格表`);
+            return rows;
+        } catch (error) {
+            console.error('FirebaseDataManager: 加载接龙价格表失败:', error);
+            return [];
+        }
+    }
+
+    subscribeToJlPriceTable(callback) {
+        const ref = this._settingsDocRef('jlPriceTable');
+        if (!ref || !this._currentUser) {
+            console.warn('FirebaseDataManager: Firestore 或用户未就绪，跳过订阅接龙价格表');
+            return;
+        }
+
+        this.unsubscribeJlPriceTable();
+
+        this._jlPriceTableUnsubscribe = ref.onSnapshot((doc) => {
+            const exists = typeof doc.exists === 'function' ? doc.exists() : doc.exists;
+            const data = exists ? (doc.data() || {}) : {};
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+
+            try {
+                callback(rows);
+            } catch (error) {
+                console.error('FirebaseDataManager: 接龙价格表回调失败:', error);
+            }
+
+            console.log(`FirebaseDataManager: onSnapshot jlPriceTable → ${rows.length} 条记录`);
+        }, (error) => {
+            console.error('FirebaseDataManager: 监听接龙价格表出错:', error);
+        });
+    }
+
     // ====== 实时监听 ======
     subscribeToStore(storeId, callbacks) {
         if (!storeId) {
@@ -601,5 +677,12 @@ class FirebaseDataManager {
             try { unsub(); } catch (e) {}
         });
         this.unsubscribers = [];
+    }
+
+    unsubscribeJlPriceTable() {
+        if (this._jlPriceTableUnsubscribe) {
+            try { this._jlPriceTableUnsubscribe(); } catch (e) {}
+            this._jlPriceTableUnsubscribe = null;
+        }
     }
 }

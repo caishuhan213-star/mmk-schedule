@@ -656,6 +656,7 @@ class ScheduleManager {
         this.reportRebates = this.loadReportRebates();
         this.salaryTiers = this.loadSalaryTiers();
         this.salaryPassword = this.loadSalaryPassword();
+        this.jlPriceTable = this.jlLoadPriceTable();
         this.currentSort = { field: null, direction: 'asc' };
         this.editingId = null;
         this.editingProjectId = null;
@@ -712,6 +713,8 @@ class ScheduleManager {
 
         // Firebase 登录后，通过 onSnapshot 实时同步数据
         this.dbManager.onReady(() => {
+            this.jlInitPriceTableSync();
+
             // 先从 Firestore 加载店铺列表（localStorage 可能是新域名/空的）
             this._loadStoresFromFirestore().then(() => {
                 // 店铺加载完成后再订阅当前店铺的数据
@@ -10250,18 +10253,83 @@ ${photoStatus}`;
 
     // ==================== 接龙数据转换工具 ====================
 
-    // --- 价格表 localStorage 存储 ---
+    // --- 价格表：本地缓存 + Firebase 团队通用同步 ---
     get _jlPriceKey() { return 'jl_price_table'; }
 
+    _jlNormalizePriceRows(rows) {
+        if (!Array.isArray(rows)) return [];
+        return rows
+            .map(row => ({
+                name: String(row.name || '').trim(),
+                grade: String(row.grade || '').trim().toUpperCase(),
+                price: parseFloat(row.price),
+            }))
+            .filter(row => row.name && row.grade && !isNaN(row.price));
+    }
+
     jlLoadPriceTable() {
+        if (Array.isArray(this.jlPriceTable)) {
+            return this.jlPriceTable;
+        }
+
         try {
             const raw = localStorage.getItem(this._jlPriceKey);
-            return raw ? JSON.parse(raw) : [];
+            return this._jlNormalizePriceRows(raw ? JSON.parse(raw) : []);
         } catch (e) { return []; }
     }
 
-    jlSavePriceTable(rows) {
-        localStorage.setItem(this._jlPriceKey, JSON.stringify(rows));
+    _jlCachePriceTable(rows) {
+        try {
+            localStorage.setItem(this._jlPriceKey, JSON.stringify(rows));
+        } catch (error) {
+            console.warn('接龙价格表本地缓存失败:', error);
+        }
+    }
+
+    _jlApplyPriceTableRows(rows) {
+        const cleanRows = this._jlNormalizePriceRows(rows);
+        this.jlPriceTable = cleanRows;
+        this._jlCachePriceTable(cleanRows);
+        this.jlRefreshPriceStatus();
+
+        const modal = document.getElementById('jlPriceModal');
+        if (modal && modal.style.display !== 'none') {
+            this.jlRenderPriceTable();
+        }
+    }
+
+    jlSavePriceTable(rows, options = {}) {
+        const cleanRows = this._jlNormalizePriceRows(rows);
+        this.jlPriceTable = cleanRows;
+        this._jlCachePriceTable(cleanRows);
+
+        if (options.sync !== false && this.dbManager && this.dbManager.saveJlPriceTable) {
+            this.dbManager.saveJlPriceTable(cleanRows).catch(error => {
+                console.error('同步接龙价格表到 Firebase 失败:', error);
+            });
+        }
+    }
+
+    jlInitPriceTableSync() {
+        if (!this.dbManager || !this.dbManager.subscribeToJlPriceTable) return;
+
+        const localRows = this.jlLoadPriceTable();
+        let firstSnapshot = true;
+
+        this.dbManager.subscribeToJlPriceTable((rows) => {
+            if (firstSnapshot) {
+                firstSnapshot = false;
+
+                if (rows.length === 0 && localRows.length > 0) {
+                    this.dbManager.saveJlPriceTable(localRows).catch(error => {
+                        console.error('迁移接龙价格表到 Firebase 失败:', error);
+                    });
+                    return;
+                }
+            }
+
+            this._jlApplyPriceTableRows(rows);
+        });
     }
 
     // --- 状态栏刷新 ---
@@ -10274,6 +10342,8 @@ ${photoStatus}`;
         if (rows.length === 0) {
             statusEl.textContent = '未加载价格表';
             statusEl.className = 'jl-price-status';
+            if (empEl) empEl.textContent = '员工: 0';
+            if (gradeEl) gradeEl.textContent = '等级: 0';
         } else {
             const names = new Set(rows.map(r => r.name));
             const grades = new Set(rows.map(r => r.grade.toUpperCase()));
