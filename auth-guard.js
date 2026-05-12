@@ -17,6 +17,30 @@
     // 登录遮罩 HTML
     // =============================================
     const OVERLAY_ID = 'authOverlay';
+    const AUTH_OK_KEY = 'authGuardLastAllowedAt';
+    let overlayTimer = null;
+
+    function shouldDelayOverlay() {
+        const lastAllowedAt = Number(sessionStorage.getItem(AUTH_OK_KEY) || 0);
+        return lastAllowedAt && Date.now() - lastAllowedAt < 10 * 60 * 1000;
+    }
+
+    function scheduleOverlay() {
+        if (overlayTimer || document.getElementById(OVERLAY_ID)) return;
+
+        const delay = shouldDelayOverlay() ? 2500 : 700;
+        overlayTimer = setTimeout(() => {
+            overlayTimer = null;
+            createOverlay();
+        }, delay);
+    }
+
+    function cancelOverlayTimer() {
+        if (overlayTimer) {
+            clearTimeout(overlayTimer);
+            overlayTimer = null;
+        }
+    }
 
     function createOverlay() {
         if (document.getElementById(OVERLAY_ID)) return;
@@ -25,28 +49,46 @@
         overlay.id = OVERLAY_ID;
         overlay.style.cssText = `
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: color-mix(in srgb, var(--color-bg, #ffffff) 94%, var(--color-primary, #2563EB) 6%);
             display: flex; align-items: center; justify-content: center;
-            z-index: 99999; flex-direction: column;
+            z-index: 99999; flex-direction: column; padding: 24px;
+            font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
         `;
         overlay.innerHTML = `
             <div style="
-                background: white; border-radius: 16px; padding: 48px 40px;
-                text-align: center; max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                background: var(--color-surface, #ffffff); border: 1px solid var(--color-border, #E5E7EB);
+                border-radius: var(--radius-lg, 12px); padding: 32px;
+                text-align: left; max-width: 420px; width: min(100%, 420px);
+                box-shadow: var(--shadow-xl, 0 8px 24px rgba(0, 0, 0, 0.08));
             ">
-                <div style="font-size: 48px; margin-bottom: 16px;">🔐</div>
-                <h2 style="margin: 0 0 8px; font-size: 24px; color: #333;">内部系统登录</h2>
-                <p style="margin: 0 0 32px; color: #888; font-size: 14px;">请使用授权的 Google 账号登录</p>
+                <div style="
+                    display: inline-flex; align-items: center; gap: 8px;
+                    padding: 6px 10px; border-radius: var(--radius-full, 9999px);
+                    background: var(--color-primary-bg, rgba(37, 99, 235, 0.05));
+                    color: var(--color-primary, #2563EB); font-size: var(--font-size-xs, 12px);
+                    font-weight: 700; margin-bottom: 18px;
+                ">排班系统</div>
+                <h2 style="
+                    margin: 0 0 8px; font-size: var(--font-size-2xl, 24px);
+                    line-height: 1.25; color: var(--color-text, #1F2937);
+                    font-weight: 700;
+                ">内部系统登录</h2>
+                <p style="
+                    margin: 0 0 24px; color: var(--color-text-secondary, #4B5563);
+                    font-size: var(--font-size-sm, 13px); line-height: 1.6;
+                ">请使用授权的 Google 账号登录后继续操作。</p>
                 <button id="authGuardLoginBtn" style="
-                    background: linear-gradient(135deg, #667eea, #764ba2);
-                    color: white; border: none; padding: 14px 32px; border-radius: 8px;
-                    font-size: 16px; cursor: pointer; width: 100%; font-weight: bold;
-                    transition: opacity 0.2s;
-                " onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
-                    🔑 使用 Google 账号登录
+                    background: var(--color-cta, #2563EB); color: white;
+                    border: 1px solid var(--color-cta, #2563EB);
+                    padding: 10px 16px; border-radius: var(--radius-md, 8px);
+                    font-size: var(--font-size-sm, 13px); cursor: pointer; width: 100%;
+                    font-weight: 700; transition: background var(--transition-fast, 120ms ease), border-color var(--transition-fast, 120ms ease);
+                " onmouseover="this.style.background='var(--color-cta-dark, #1D4ED8)';this.style.borderColor='var(--color-cta-dark, #1D4ED8)'" onmouseout="this.style.background='var(--color-cta, #2563EB)';this.style.borderColor='var(--color-cta, #2563EB)'">
+                    使用 Google 登录
                 </button>
                 <p id="authGuardError" style="
-                    margin: 16px 0 0; color: #e53e3e; font-size: 13px; display: none;
+                    margin: 14px 0 0; color: var(--color-danger, #DC2626);
+                    font-size: var(--font-size-xs, 12px); display: none;
                 "></p>
             </div>
         `;
@@ -58,11 +100,13 @@
     }
 
     function hideOverlay() {
+        cancelOverlayTimer();
         const overlay = document.getElementById(OVERLAY_ID);
         if (overlay) overlay.remove();
     }
 
     function showError(msg) {
+        createOverlay();
         const el = document.getElementById('authGuardError');
         if (el) {
             el.textContent = msg;
@@ -99,11 +143,11 @@
     // 主逻辑：监听认证状态
     // =============================================
     function setupGuard() {
-        // 先显示遮罩，等待认证结果
+        // 等待 Firebase 恢复登录态，避免已登录用户在页面跳转时看到登录遮罩闪一下
         if (document.body) {
-            createOverlay();
+            scheduleOverlay();
         } else {
-            document.addEventListener('DOMContentLoaded', createOverlay);
+            document.addEventListener('DOMContentLoaded', scheduleOverlay);
         }
 
         // 轮询等待 firebase.auth 就绪
@@ -115,14 +159,16 @@
                         if (user) {
                             if (isAllowed(user.email)) {
                                 // 允许进入
+                                sessionStorage.setItem(AUTH_OK_KEY, String(Date.now()));
                                 hideOverlay();
                             } else {
                                 // 不在白名单，强制登出
                                 auth.signOut();
-                                showError(`❌ 账号 ${user.email} 无权访问，请联系管理员`);
+                                showError(`账号 ${user.email} 无权访问，请联系管理员`);
                             }
                         } else {
                             // 未登录，确保遮罩显示
+                            cancelOverlayTimer();
                             createOverlay();
                         }
                     });

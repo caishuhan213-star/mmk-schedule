@@ -948,7 +948,7 @@ class ScheduleManager {
             if (backButton) {
                 backButton.style.display = 'inline-block';
                 backButton.onclick = () => {
-                    window.location.href = 'store-center.html';
+                    this.switchTab('store-center');
                 };
             }
         } else {
@@ -1136,12 +1136,85 @@ class ScheduleManager {
             return;
         }
 
+        if (storeId === this.currentStoreId) {
+            return;
+        }
+
         // 保存当前店铺ID（使用安全方法）
         this.saveCurrentStoreIdSafely(storeId);
         this.currentStoreId = storeId;
+        this.currentStore = store;
+        this.dataKeyPrefix = `store_${storeId}_`;
         
-        // 刷新页面以加载新店铺的数据
-        window.location.reload();
+        // 不刷新页面，避免 auth-guard 重新显示登录遮罩；直接切换数据上下文并重订阅。
+        this.loadStoreDataFromCache();
+        this.refreshCurrentStoreView();
+
+        if (this.dbManager && this.dbManager.subscribeToStore) {
+            this.dbManager.subscribeToStore(this.currentStoreId, this._getSubscribeCallbacks());
+        }
+
+        this.showSuccessMessage(`已切换到店铺：${store.name}`);
+    }
+
+    readStoreCache(key, fallback) {
+        try {
+            const value = localStorage.getItem(this.getStorageKey(key));
+            return value ? JSON.parse(value) : fallback;
+        } catch (error) {
+            console.warn(`读取 ${key} 缓存失败:`, error);
+            return fallback;
+        }
+    }
+
+    loadStoreDataFromCache() {
+        this.schedules = this.readStoreCache('schedules', []);
+        this.operatingCosts = this.readStoreCache('operatingCosts', []);
+        this.projects = this.readStoreCache('projects', []);
+        this.employees = this.readStoreCache('employees', []);
+        this.attendanceFees = this.readStoreCache('attendanceFees', []);
+        this.interviewFees = this.readStoreCache('interviewFees', []);
+        this.reportRebates = this.readStoreCache('reportRebates', []);
+        this.salaryTiers = this.readStoreCache('salaryTiers', {});
+        this.salaryPassword = localStorage.getItem(this.getStorageKey('salaryPassword')) || 'admin123';
+    }
+
+    refreshCurrentStoreView() {
+        this.setupStoreContextUI();
+        this.updateStoreSelector();
+        this.renderTableWithCurrentFilter();
+        this.updateStats();
+        this.renderProjectList();
+        this.updateProjectSelectors();
+        this.renderEmployeeList();
+        this.updateEmployeeSelectors().catch(err => console.error('更新员工选择器失败:', err));
+        this.renderAttendanceFeeTable();
+        this.updateAttendanceFeeSelectors();
+        this.renderInterviewFeeTable();
+        this.updateInterviewFeeSelectors();
+        this.renderOperatingCostTable();
+        this.updateOperatingCostStats();
+        this.renderReportRebateTable();
+        this.renderEmployeeCommissionSummary();
+        this.initializeSalaryManagement();
+
+        const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+        if (activeTab === 'store-center') {
+            this.renderStoresList();
+            this.renderAllStoresSummary();
+            this.renderStoreComparisonChart();
+        } else if (activeTab === 'charts') {
+            this.initializeIncomeChart();
+            this.initializeHeatmapChart();
+            this.initializeSourceChannelCharts();
+            this.initializeEmployeePerformanceChart();
+            this.initializeClientEmployeeCollaborationChart();
+            this.updateEmployeeClientSelector();
+            this.initializeEmployeeClientChart();
+            this.initializeCustomerStatusCharts();
+        } else if (activeTab === 'operating-cost') {
+            this.initializeOperatingCostCharts();
+        }
     }
 
     // 打开店铺管理模态框（添加）
