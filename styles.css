@@ -316,6 +316,7 @@ body.staff-readonly-mode .main-content {
 }
 
 body.staff-readonly-mode .left-column,
+body.staff-readonly-mode #backToStoreCenter,
 body.staff-readonly-mode #actionToggle,
 body.staff-readonly-mode #actionButtonsPanel,
 body.staff-readonly-mode .btn-edit,
