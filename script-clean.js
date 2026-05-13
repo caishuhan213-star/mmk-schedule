@@ -6780,6 +6780,7 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.incomeChart) {
             this.incomeChart.destroy();
+            this.incomeChart = null;
         }
 
         this.updateIncomeChart();
@@ -7560,6 +7561,7 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.heatmapChart) {
             this.heatmapChart.destroy();
+            this.heatmapChart = null;
         }
 
         this.updateHeatmapChart();
@@ -7856,9 +7858,11 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.sourceChannelOrderChart) {
             this.sourceChannelOrderChart.destroy();
+            this.sourceChannelOrderChart = null;
         }
         if (this.sourceChannelIncomeChart) {
             this.sourceChannelIncomeChart.destroy();
+            this.sourceChannelIncomeChart = null;
         }
 
         this.updateSourceChannelCharts();
@@ -8186,6 +8190,7 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.employeePerformanceChart) {
             this.employeePerformanceChart.destroy();
+            this.employeePerformanceChart = null;
         }
 
         this.updateEmployeePerformanceChart();
@@ -8464,6 +8469,7 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.clientEmployeeCollaborationChart) {
             this.clientEmployeeCollaborationChart.destroy();
+            this.clientEmployeeCollaborationChart = null;
         }
 
         this.updateClientEmployeeCollaborationChart();
@@ -8782,6 +8788,7 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.employeeClientChart) {
             this.employeeClientChart.destroy();
+            this.employeeClientChart = null;
         }
 
         this.updateEmployeeClientChart();
@@ -9094,12 +9101,15 @@ ${photoStatus}`;
         // 如果图表已存在，先销毁
         if (this.customerCountPieChart) {
             this.customerCountPieChart.destroy();
+            this.customerCountPieChart = null;
         }
         if (this.customerIncomePieChart) {
             this.customerIncomePieChart.destroy();
+            this.customerIncomePieChart = null;
         }
         if (this.customerStatusBarChart) {
             this.customerStatusBarChart.destroy();
+            this.customerStatusBarChart = null;
         }
 
         this.updateCustomerStatusCharts();
