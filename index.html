@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=9">
+    <link rel="stylesheet" href="styles.css?v=10">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1422,7 +1422,7 @@
                                 <span>🏆 员工绩效</span>
                                 <span>👥 客户分析</span>
                                 <span>📡 渠道 ROI</span>
-                                <span>💰 利润诊断</span>
+                                <span class="ai-cost-feature">💰 利润诊断</span>
                                 <span>🎯 可执行建议</span>
                             </div>
                         </div>
@@ -1461,7 +1461,7 @@
                         <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('本月哪个员工表现最好？原因是什么？')">🏆 最佳员工</button>
                         <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('哪个获客渠道值得加大投入？')">📡 最佳渠道</button>
                         <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('我的客户流失情况怎么样？')">👥 客户流失</button>
-                        <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('运营成本有什么需要关注的地方？')">💰 成本分析</button>
+                        <button class="quick-prompt-btn ai-cost-prompt" onclick="scheduleManager.quickAIChat('运营成本有什么需要关注的地方？')">💰 成本分析</button>
                         <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('给我3条最重要的改进建议')">🎯 改进建议</button>
                         <button class="quick-prompt-btn" onclick="scheduleManager.quickAIChat('下个月收入趋势大概是怎样的？')">📈 收入预测</button>
                     </div>
@@ -2022,8 +2022,8 @@
     </script>
     <script src="firebase-manager.js?v=5"></script>
     <script src="firebase-data-manager.js?v=9"></script>
-    <script src="ai-analyst.js?v=2"></script>
-    <script src="script-clean.js?v=19"></script>
+    <script src="ai-analyst.js?v=3"></script>
+    <script src="script-clean.js?v=20"></script>
     <script src="auth-guard.js?v=5"></script>
 </body>
 </html>

@@ -78,8 +78,13 @@ class AIAnalyst {
     // dateRange: 天数(number) | 'all' | { custom: true, startDate, endDate }
     // ============================================================
     buildDataSummary(manager, dateRange) {
+        const isStaffReadOnly = Boolean(
+            manager?.isStaffReadOnly ||
+            (typeof window !== 'undefined' && window.MMK_CURRENT_USER_ROLE === 'staff')
+        );
+        const canViewOperatingCosts = !isStaffReadOnly;
         const schedules = manager.schedules || [];
-        const operatingCosts = manager.operatingCosts || [];
+        const operatingCosts = canViewOperatingCosts ? (manager.operatingCosts || []) : [];
         const attendanceFees = manager.attendanceFees || [];
         const interviewFees = manager.interviewFees || [];
         const reportRebates = manager.reportRebates || [];
@@ -172,7 +177,7 @@ class AIAnalyst {
         });
         const totalRebates = filteredRebates.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0);
 
-        const netProfit = totalRevenue - totalCommission - totalCosts - totalAttendanceFee - totalInterviewFee - totalRebates;
+        const netProfit = totalRevenue - totalCommission - (canViewOperatingCosts ? totalCosts : 0) - totalAttendanceFee - totalInterviewFee - totalRebates;
         const profitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0';
 
         // 上期对比
@@ -320,16 +325,18 @@ class AIAnalyst {
         return {
             period: periodLabel,
             activeDays,
+            canViewOperatingCosts,
             overview: {
                 totalRevenue: Math.round(totalRevenue),
                 totalOrders: filtered.length,
                 totalCommission: Math.round(totalCommission),
-                totalCosts: Math.round(totalCosts),
+                totalCosts: canViewOperatingCosts ? Math.round(totalCosts) : undefined,
                 totalAttendanceFee: Math.round(totalAttendanceFee),
                 totalInterviewFee: Math.round(totalInterviewFee),
                 totalRebates: Math.round(totalRebates),
                 netProfit: Math.round(netProfit),
                 profitMargin: profitMargin + '%',
+                profitBasis: canViewOperatingCosts ? '已扣除运营成本' : '未包含运营成本',
                 avgDailyRevenue: activeDays > 0 ? Math.round(totalRevenue / activeDays) : 0,
                 avgOrderValue: filtered.length > 0 ? Math.round(totalRevenue / filtered.length) : 0,
             },
@@ -344,12 +351,12 @@ class AIAnalyst {
             channels,
             topProjects,
             peakHours,
-            costSummary: {
+            costSummary: canViewOperatingCosts ? {
                 total: Math.round(totalCosts),
                 categories: Object.fromEntries(
                     Object.entries(costByCategory).map(([k, v]) => [k, Math.round(v)])
                 ),
-            },
+            } : undefined,
             dailyTrend,
             monthlyTrend,
             employeeMonthlyStats,
@@ -359,7 +366,15 @@ class AIAnalyst {
     // ============================================================
     // 分析报告的 system prompt
     // ============================================================
-    buildReportSystemPrompt() {
+    buildReportSystemPrompt(summary = {}) {
+        const profitSection = summary.canViewOperatingCosts ? `## 💰 成本与利润分析
+- 当前利润率是否健康（同类业务参考 30%~50%）
+- 运营成本结构是否合理
+- 员工提成占收入比例分析` : `## 💰 收益分析
+- 当前收益率是否健康
+- 员工提成、坐班费、面试费和报告返现占收入比例分析
+- 当前账号没有运营成本查看权限，不要分析、展示或推测运营成本`;
+
         return `你是一位专业的服务型企业经营顾问，精通员工排班管理、绩效分析和客户运营。
 用户经营一家服务型店铺，使用排班系统管理员工工作安排和客户预约，主要收入来源是员工为客户提供服务（按单收费），员工获得提成。
 
@@ -383,10 +398,7 @@ class AIAnalyst {
 - 增长渠道 vs 萎缩渠道判断
 - 渠道资源分配建议
 
-## 💰 成本与利润分析
-- 当前利润率是否健康（同类业务参考 30%~50%）
-- 运营成本结构是否合理
-- 员工提成占收入比例分析
+${profitSection}
 
 ## 🎯 本期重点建议
 列出 **3条** 最重要、最可执行的建议（要具体，不要泛泛而谈）
@@ -410,6 +422,7 @@ ${JSON.stringify(summary, null, 2)}
 - topEmployees：员工排名（累计总数据）
 - topClients：客户排名
 - channels：获客渠道分析
+${summary.canViewOperatingCosts ? '- costSummary：运营成本摘要' : '- 当前账号没有运营成本查看权限，数据摘要不包含运营成本；如果用户询问运营成本，请说明无权限查看，不要推测。'}
 
 请根据这些真实数据回答用户的问题：
 - 回答要简洁、具体，引用数据中的具体数字
@@ -429,7 +442,7 @@ ${JSON.stringify(summary, null, 2)}
         this._currentDataSummary = summary;
 
         const messages = [
-            { role: 'system', content: this.buildReportSystemPrompt() },
+            { role: 'system', content: this.buildReportSystemPrompt(summary) },
             {
                 role: 'user',
                 content: `请分析以下经营数据，生成完整的经营分析报告：\n\n${JSON.stringify(summary, null, 2)}`,

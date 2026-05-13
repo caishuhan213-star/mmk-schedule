@@ -323,11 +323,23 @@ body.staff-readonly-mode .btn-edit,
 body.staff-readonly-mode .btn-danger,
 body.staff-readonly-mode .btn-warning,
 body.staff-readonly-mode #store-center-tab,
-body.staff-readonly-mode #management-tab,
-body.staff-readonly-mode #rebate-tab,
-body.staff-readonly-mode #operating-cost-tab,
-body.staff-readonly-mode #data-convert-tab,
-body.staff-readonly-mode #ai-analysis-tab {
+body.staff-readonly-mode #operating-cost-tab {
+    display: none !important;
+}
+
+body.staff-readonly-mode #management-tab .storage-section,
+body.staff-readonly-mode #management-tab .employee-controls,
+body.staff-readonly-mode #management-tab .project-controls,
+body.staff-readonly-mode #management-tab .salary-management-section,
+body.staff-readonly-mode #rebate-tab .rebate-form-container,
+body.staff-readonly-mode #rebate-tab .list-actions,
+body.staff-readonly-mode #rebate-tab #reportRebateTable th:last-child,
+body.staff-readonly-mode #rebate-tab #reportRebateTable td:last-child,
+body.staff-readonly-mode #data-convert-tab #jlImportCsv,
+body.staff-readonly-mode #data-convert-tab #jlManagePrice,
+body.staff-readonly-mode #data-convert-tab .jl-price-actions,
+body.staff-readonly-mode #ai-analysis-tab .ai-cost-feature,
+body.staff-readonly-mode #ai-analysis-tab .ai-cost-prompt {
     display: none !important;
 }
 

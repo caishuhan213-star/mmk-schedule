@@ -734,7 +734,7 @@ class ScheduleManager {
         }
 
         const normalized = String(email || '').trim().toLowerCase();
-        if (normalized === 'vincent.c0540@gmail.com') return 'staff';
+        if (['vincent.c0540@gmail.com', '751496696@qq.com'].includes(normalized)) return 'staff';
         return 'admin';
     }
 
@@ -789,9 +789,20 @@ class ScheduleManager {
         this.applyAccessVisibility();
     }
 
+    getStaffAllowedTabs() {
+        return new Set([
+            'data-convert',
+            'schedule',
+            'management',
+            'rebate',
+            'charts',
+            'ai-analysis',
+        ]);
+    }
+
     canAccessTab(tabName) {
         if (!this.isStaffReadOnly) return true;
-        return ['schedule', 'charts'].includes(tabName);
+        return this.getStaffAllowedTabs().has(tabName);
     }
 
     canModifyData() {
@@ -799,7 +810,7 @@ class ScheduleManager {
     }
 
     showReadOnlyMessage(action = '修改数据') {
-        alert(`店员账号仅可查看排班管理和数据图表，不能${action}。`);
+        alert(`店员账号仅可查看授权页面，不能${action}。`);
     }
 
     requireModifyPermission(action) {
@@ -809,7 +820,7 @@ class ScheduleManager {
     }
 
     applyAccessVisibility() {
-        const allowedStaffTabs = new Set(['schedule', 'charts']);
+        const allowedStaffTabs = this.getStaffAllowedTabs();
 
         document.querySelectorAll('.tab-btn').forEach(btn => {
             const tabName = btn.dataset.tab;
@@ -6887,7 +6898,7 @@ ${photoStatus}`;
     clearAIReport() {
         const outputEl = document.getElementById('aiReportOutput');
         if (outputEl) {
-            outputEl.innerHTML = '<div class="ai-report-placeholder"><div class="ai-placeholder-icon">🤖</div><p>选择时间范围，点击「生成报告」，AI 将基于你的真实经营数据生成深度分析报告</p><div class="ai-placeholder-features"><span>📈 收入趋势</span><span>🏆 员工绩效</span><span>👥 客户分析</span><span>📡 渠道 ROI</span><span>💰 利润诊断</span><span>🎯 可执行建议</span></div></div>';
+            outputEl.innerHTML = '<div class="ai-report-placeholder"><div class="ai-placeholder-icon">🤖</div><p>选择时间范围，点击「生成报告」，AI 将基于你的真实经营数据生成深度分析报告</p><div class="ai-placeholder-features"><span>📈 收入趋势</span><span>🏆 员工绩效</span><span>👥 客户分析</span><span>📡 渠道 ROI</span><span class="ai-cost-feature">💰 利润诊断</span><span>🎯 可执行建议</span></div></div>';
         }
     }
 
