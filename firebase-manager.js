@@ -74,6 +74,16 @@ class FirebaseManager {
             // 获取Firestore和Auth实例（v9兼容模式）
             this.firestore = firebase.firestore();
             this.auth = firebase.auth();
+
+            // 明确使用本地持久登录，避免邮箱密码账号在页面空闲或刷新后回到未登录态
+            if (this.auth.setPersistence && firebase.auth.Auth && firebase.auth.Auth.Persistence) {
+                try {
+                    await this.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+                    console.log('✅ Firebase Auth 已设置为本地持久登录');
+                } catch (persistenceError) {
+                    console.warn('⚠️ Firebase Auth 本地持久登录设置失败，将继续使用默认登录状态:', persistenceError);
+                }
+            }
             
             // 创建Google登录提供方
             this.googleProvider = new firebase.auth.GoogleAuthProvider();

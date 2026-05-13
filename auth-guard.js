@@ -23,6 +23,15 @@
         return String(email || '').trim().toLowerCase();
     }
 
+    function getUserEmail(user) {
+        if (!user) return '';
+        if (user.email) return user.email;
+        const provider = Array.isArray(user.providerData)
+            ? user.providerData.find(item => item && item.email)
+            : null;
+        return provider ? provider.email : '';
+    }
+
     function includesEmail(list, email) {
         const normalized = normalizeEmail(email);
         return list.some(item => normalizeEmail(item) === normalized);
@@ -35,7 +44,7 @@
     }
 
     function publishRole(user) {
-        const email = user && user.email ? user.email : '';
+        const email = getUserEmail(user);
         const role = getRoleForEmail(email);
 
         window.MMK_CURRENT_USER_ROLE = role;
@@ -70,18 +79,22 @@
     const OVERLAY_ID = 'authOverlay';
     const AUTH_OK_KEY = 'authGuardLastAllowedAt';
     let overlayTimer = null;
+    let authStateResolved = false;
 
     function shouldDelayOverlay() {
         const lastAllowedAt = Number(sessionStorage.getItem(AUTH_OK_KEY) || 0);
         return lastAllowedAt && Date.now() - lastAllowedAt < 10 * 60 * 1000;
     }
 
-    function scheduleOverlay() {
+    function scheduleOverlay(delayOverride) {
         if (overlayTimer || document.getElementById(OVERLAY_ID)) return;
 
-        const delay = shouldDelayOverlay() ? 2500 : 700;
+        const delay = typeof delayOverride === 'number'
+            ? delayOverride
+            : (shouldDelayOverlay() ? 4000 : 8000);
         overlayTimer = setTimeout(() => {
             overlayTimer = null;
+            if (authStateResolved) return;
             createOverlay();
         }, delay);
     }
@@ -320,15 +333,26 @@
         return getRoleForEmail(email) !== 'denied';
     }
 
+    function ensureLocalPersistence(auth) {
+        if (!auth || !auth.setPersistence || !firebase.auth.Auth || !firebase.auth.Auth.Persistence) {
+            return Promise.resolve();
+        }
+
+        return auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+            .catch(error => {
+                console.warn('auth-guard: 本地登录保持设置失败，将继续使用默认登录状态', error);
+            });
+    }
+
     // =============================================
     // 主逻辑：监听认证状态
     // =============================================
     function setupGuard() {
         // 等待 Firebase 恢复登录态，避免已登录用户在页面跳转时看到登录遮罩闪一下
         if (document.body) {
-            scheduleOverlay();
+            scheduleOverlay(8000);
         } else {
-            document.addEventListener('DOMContentLoaded', scheduleOverlay);
+            document.addEventListener('DOMContentLoaded', () => scheduleOverlay(8000));
         }
 
         // 轮询等待 firebase.auth 就绪
@@ -336,17 +360,23 @@
             if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
                 try {
                     const auth = firebase.auth();
-                    auth.onAuthStateChanged((user) => {
+                    ensureLocalPersistence(auth).finally(() => auth.onAuthStateChanged((user) => {
+                        authStateResolved = true;
                         if (user) {
-                            if (isAllowed(user.email)) {
+                            const email = getUserEmail(user);
+                            if (email && isAllowed(email)) {
                                 // 允许进入
                                 publishRole(user);
                                 sessionStorage.setItem(AUTH_OK_KEY, String(Date.now()));
                                 hideOverlay();
+                            } else if (!email) {
+                                console.warn('auth-guard: 当前用户没有可识别邮箱，暂不强制登出', user);
+                                publishRole(null);
+                                showError('当前账号没有可识别邮箱，请刷新页面或重新登录');
                             } else {
                                 // 不在白名单，强制登出
                                 auth.signOut();
-                                showError(`账号 ${user.email} 无权访问，请联系管理员`);
+                                showError(`账号 ${email} 无权访问，请联系管理员`);
                             }
                         } else {
                             // 未登录，确保遮罩显示
@@ -354,7 +384,7 @@
                             cancelOverlayTimer();
                             createOverlay();
                         }
-                    });
+                    }));
                 } catch (e) {
                     console.error('auth-guard: firebase.auth() 调用失败', e);
                 }
