@@ -11,6 +11,7 @@
 
     const STAFF_EMAILS = [
         'vincent.c0540@gmail.com',
+        '751496696@qq.com',
     ];
 
     const ALLOWED_EMAILS = Array.from(new Set([...ADMIN_EMAILS, ...STAFF_EMAILS]));
