@@ -182,6 +182,88 @@ class FirebaseManager {
             this.updateLoginUI();
         }
     }
+
+    // 邮箱密码登录
+    async signInWithEmailPassword(email, password) {
+        if (!this.auth) {
+            console.error('❌ Auth未初始化');
+            this.showErrorStatus("认证未初始化");
+            throw new Error("认证未初始化，请刷新页面重试");
+        }
+
+        const cleanEmail = String(email || '').trim();
+        if (!cleanEmail || !password) {
+            throw new Error("请输入邮箱和密码");
+        }
+
+        try {
+            console.log('开始邮箱密码登录...');
+            this.syncStatus = 'signing-in';
+            this.showSyncStatus();
+
+            await this.auth.signInWithEmailAndPassword(cleanEmail, password);
+            console.log('✅ 邮箱密码登录成功');
+        } catch (error) {
+            console.error('❌ 邮箱密码登录失败:', error);
+
+            let errorMessage = "登录失败，请检查邮箱和密码";
+            if (error.code === 'auth/invalid-email') {
+                errorMessage = "邮箱格式不正确";
+            } else if (
+                error.code === 'auth/user-not-found' ||
+                error.code === 'auth/wrong-password' ||
+                error.code === 'auth/invalid-credential'
+            ) {
+                errorMessage = "邮箱或密码不正确";
+            } else if (error.code === 'auth/user-disabled') {
+                errorMessage = "该账号已被禁用";
+            } else if (error.code === 'auth/too-many-requests') {
+                errorMessage = "尝试次数过多，请稍后再试";
+            } else if (error.code === 'auth/operation-not-allowed') {
+                errorMessage = "邮箱密码登录尚未启用";
+            }
+
+            this.syncStatus = 'auth-error';
+            this.showErrorStatus(errorMessage);
+            this.updateLoginUI();
+            throw new Error(errorMessage);
+        }
+    }
+
+    // 发送密码重置邮件
+    async sendPasswordReset(email) {
+        if (!this.auth) {
+            console.error('❌ Auth未初始化');
+            this.showErrorStatus("认证未初始化");
+            throw new Error("认证未初始化，请刷新页面重试");
+        }
+
+        const cleanEmail = String(email || '').trim();
+        if (!cleanEmail) {
+            throw new Error("请先输入邮箱地址");
+        }
+
+        try {
+            await this.auth.sendPasswordResetEmail(cleanEmail);
+            console.log('✅ 密码重置邮件已发送:', cleanEmail);
+        } catch (error) {
+            console.error('❌ 密码重置邮件发送失败:', error);
+
+            let errorMessage = "重置邮件发送失败";
+            if (error.code === 'auth/invalid-email') {
+                errorMessage = "邮箱格式不正确";
+            } else if (error.code === 'auth/user-not-found') {
+                errorMessage = "没有找到这个邮箱账号";
+            } else if (error.code === 'auth/too-many-requests') {
+                errorMessage = "请求过于频繁，请稍后再试";
+            } else if (error.code === 'auth/operation-not-allowed') {
+                errorMessage = "邮箱密码登录尚未启用";
+            }
+
+            this.showErrorStatus(errorMessage);
+            throw new Error(errorMessage);
+        }
+    }
     
     // 登出
     async signOut() {

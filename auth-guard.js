@@ -48,6 +48,10 @@
         window.dispatchEvent(new CustomEvent('mmk-auth-role-change', {
             detail: { role, email }
         }));
+
+        if (window.firebaseManager && window.firebaseManager.updateLoginUI) {
+            window.firebaseManager.updateLoginUI();
+        }
     }
 
     window.MMK_ACCESS_CONTROL = {
@@ -120,10 +124,46 @@
                     font-weight: 700;
                 ">内部系统登录</h2>
                 <p style="
-                    margin: 0 0 24px; color: var(--color-text-secondary, #4B5563);
+                    margin: 0 0 20px; color: var(--color-text-secondary, #4B5563);
                     font-size: var(--font-size-sm, 13px); line-height: 1.6;
-                ">请使用授权的 Google 账号登录后继续操作。</p>
-                <button id="authGuardLoginBtn" style="
+                ">请使用授权邮箱登录后继续操作。</p>
+                <form id="authGuardEmailForm" style="display: grid; gap: 12px; margin: 0;">
+                    <input id="authGuardEmail" type="email" autocomplete="email" placeholder="邮箱地址" required style="
+                        width: 100%; box-sizing: border-box; border: 1px solid var(--color-border, #E5E7EB);
+                        border-radius: var(--radius-md, 8px); padding: 10px 12px;
+                        font-size: var(--font-size-sm, 13px); color: var(--color-text, #1F2937);
+                        background: var(--color-surface, #ffffff);
+                    ">
+                    <input id="authGuardPassword" type="password" autocomplete="current-password" placeholder="密码" required style="
+                        width: 100%; box-sizing: border-box; border: 1px solid var(--color-border, #E5E7EB);
+                        border-radius: var(--radius-md, 8px); padding: 10px 12px;
+                        font-size: var(--font-size-sm, 13px); color: var(--color-text, #1F2937);
+                        background: var(--color-surface, #ffffff);
+                    ">
+                    <button id="authGuardEmailLoginBtn" type="submit" style="
+                        background: var(--color-cta, #2563EB); color: white;
+                        border: 1px solid var(--color-cta, #2563EB);
+                        padding: 10px 16px; border-radius: var(--radius-md, 8px);
+                        font-size: var(--font-size-sm, 13px); cursor: pointer; width: 100%;
+                        font-weight: 700; transition: background var(--transition-fast, 120ms ease), border-color var(--transition-fast, 120ms ease);
+                    " onmouseover="this.style.background='var(--color-cta-dark, #1D4ED8)';this.style.borderColor='var(--color-cta-dark, #1D4ED8)'" onmouseout="this.style.background='var(--color-cta, #2563EB)';this.style.borderColor='var(--color-cta, #2563EB)'">
+                        邮箱密码登录
+                    </button>
+                </form>
+                <button id="authGuardResetBtn" type="button" style="
+                    margin-top: 10px; background: transparent; color: var(--color-primary, #2563EB);
+                    border: 0; padding: 4px 0; font-size: var(--font-size-xs, 12px);
+                    cursor: pointer; font-weight: 600;
+                ">忘记密码？发送重置邮件</button>
+                <div style="
+                    display: flex; align-items: center; gap: 10px; margin: 16px 0;
+                    color: var(--color-text-tertiary, #6B7280); font-size: var(--font-size-xs, 12px);
+                ">
+                    <span style="height: 1px; flex: 1; background: var(--color-border, #E5E7EB);"></span>
+                    <span>或</span>
+                    <span style="height: 1px; flex: 1; background: var(--color-border, #E5E7EB);"></span>
+                </div>
+                <button id="authGuardLoginBtn" type="button" style="
                     background: var(--color-cta, #2563EB); color: white;
                     border: 1px solid var(--color-cta, #2563EB);
                     padding: 10px 16px; border-radius: var(--radius-md, 8px);
@@ -140,8 +180,17 @@
         `;
         document.body.prepend(overlay);
 
+        document.getElementById('authGuardEmailForm').addEventListener('submit', (event) => {
+            event.preventDefault();
+            triggerEmailPasswordLogin();
+        });
+
+        document.getElementById('authGuardResetBtn').addEventListener('click', () => {
+            triggerPasswordReset();
+        });
+
         document.getElementById('authGuardLoginBtn').addEventListener('click', () => {
-            triggerLogin();
+            triggerGoogleLogin();
         });
     }
 
@@ -152,18 +201,38 @@
     }
 
     function showError(msg) {
+        showMessage(msg, 'error');
+    }
+
+    function showInfo(msg) {
+        showMessage(msg, 'info');
+    }
+
+    function showMessage(msg, type) {
         createOverlay();
         const el = document.getElementById('authGuardError');
         if (el) {
             el.textContent = msg;
+            el.style.color = type === 'info'
+                ? 'var(--color-primary, #2563EB)'
+                : 'var(--color-danger, #DC2626)';
             el.style.display = 'block';
         }
     }
 
+    function showLoginOverlay() {
+        cancelOverlayTimer();
+        createOverlay();
+        const emailInput = document.getElementById('authGuardEmail');
+        if (emailInput) emailInput.focus();
+    }
+
+    window.MMK_SHOW_LOGIN = showLoginOverlay;
+
     // =============================================
     // 触发登录
     // =============================================
-    function triggerLogin() {
+    function triggerGoogleLogin() {
         // 等待 firebaseManager 就绪后调用
         const tryLogin = (retries) => {
             if (window.firebaseManager && window.firebaseManager.signInWithGoogle) {
@@ -175,6 +244,71 @@
             }
         };
         tryLogin(20);
+    }
+
+    function triggerEmailPasswordLogin() {
+        const emailInput = document.getElementById('authGuardEmail');
+        const passwordInput = document.getElementById('authGuardPassword');
+        const submitButton = document.getElementById('authGuardEmailLoginBtn');
+        const email = emailInput ? emailInput.value.trim() : '';
+        const password = passwordInput ? passwordInput.value : '';
+
+        const tryLogin = (retries) => {
+            if (window.firebaseManager && window.firebaseManager.signInWithEmailPassword) {
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = '登录中...';
+                    submitButton.style.opacity = '0.72';
+                    submitButton.style.cursor = 'wait';
+                }
+
+                window.firebaseManager.signInWithEmailPassword(email, password)
+                    .catch(error => {
+                        showError(error && error.message ? error.message : '邮箱密码登录失败');
+                    })
+                    .finally(() => {
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                            submitButton.textContent = '邮箱密码登录';
+                            submitButton.style.opacity = '1';
+                            submitButton.style.cursor = 'pointer';
+                        }
+                    });
+            } else if (retries > 0) {
+                setTimeout(() => tryLogin(retries - 1), 500);
+            } else {
+                showError('Firebase 未初始化，请刷新页面重试');
+            }
+        };
+        tryLogin(20);
+    }
+
+    function triggerPasswordReset() {
+        const emailInput = document.getElementById('authGuardEmail');
+        const email = emailInput ? emailInput.value.trim() : '';
+
+        if (!email) {
+            showError('请先输入邮箱地址');
+            if (emailInput) emailInput.focus();
+            return;
+        }
+
+        const tryReset = (retries) => {
+            if (window.firebaseManager && window.firebaseManager.sendPasswordReset) {
+                window.firebaseManager.sendPasswordReset(email)
+                    .then(() => {
+                        showInfo('重置密码邮件已发送，请检查邮箱');
+                    })
+                    .catch(error => {
+                        showError(error && error.message ? error.message : '重置邮件发送失败');
+                    });
+            } else if (retries > 0) {
+                setTimeout(() => tryReset(retries - 1), 500);
+            } else {
+                showError('Firebase 未初始化，请刷新页面重试');
+            }
+        };
+        tryReset(20);
     }
 
     // =============================================
