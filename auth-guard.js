@@ -5,13 +5,59 @@
     // =============================================
     // ⚙️ 配置：在这里添加/删除允许访问的 Google 邮箱
     // =============================================
-    const ALLOWED_EMAILS = [
+    const ADMIN_EMAILS = [
         'caishuhan213@gmail.com',
+    ];
+
+    const STAFF_EMAILS = [
         'vincent.c0540@gmail.com',
     ];
 
+    const ALLOWED_EMAILS = Array.from(new Set([...ADMIN_EMAILS, ...STAFF_EMAILS]));
+
     // 是否启用白名单（true = 只允许名单内的邮箱登录；false = 任何 Google 账号都能登录）
     const WHITELIST_ENABLED = ALLOWED_EMAILS.length > 0;
+
+    function normalizeEmail(email) {
+        return String(email || '').trim().toLowerCase();
+    }
+
+    function includesEmail(list, email) {
+        const normalized = normalizeEmail(email);
+        return list.some(item => normalizeEmail(item) === normalized);
+    }
+
+    function getRoleForEmail(email) {
+        if (includesEmail(ADMIN_EMAILS, email)) return 'admin';
+        if (includesEmail(STAFF_EMAILS, email)) return 'staff';
+        return WHITELIST_ENABLED ? 'denied' : 'staff';
+    }
+
+    function publishRole(user) {
+        const email = user && user.email ? user.email : '';
+        const role = getRoleForEmail(email);
+
+        window.MMK_CURRENT_USER_ROLE = role;
+        window.MMK_CURRENT_USER_EMAIL = email;
+
+        if (document.body) {
+            document.body.dataset.accessRole = role;
+            document.body.dataset.userEmail = email;
+        }
+
+        window.dispatchEvent(new CustomEvent('mmk-auth-role-change', {
+            detail: { role, email }
+        }));
+    }
+
+    window.MMK_ACCESS_CONTROL = {
+        ADMIN_EMAILS,
+        STAFF_EMAILS,
+        getRoleForEmail,
+        canWrite(email) {
+            return getRoleForEmail(email) === 'admin';
+        }
+    };
 
     // =============================================
     // 登录遮罩 HTML
@@ -136,7 +182,7 @@
     // =============================================
     function isAllowed(email) {
         if (!WHITELIST_ENABLED) return true;
-        return ALLOWED_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+        return getRoleForEmail(email) !== 'denied';
     }
 
     // =============================================
@@ -159,6 +205,7 @@
                         if (user) {
                             if (isAllowed(user.email)) {
                                 // 允许进入
+                                publishRole(user);
                                 sessionStorage.setItem(AUTH_OK_KEY, String(Date.now()));
                                 hideOverlay();
                             } else {
@@ -168,6 +215,7 @@
                             }
                         } else {
                             // 未登录，确保遮罩显示
+                            publishRole(null);
                             cancelOverlayTimer();
                             createOverlay();
                         }

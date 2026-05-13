@@ -307,6 +307,42 @@ header.topbar {
     min-width: 0;
 }
 
+.role-hidden {
+    display: none !important;
+}
+
+body.staff-readonly-mode .main-content {
+    grid-template-columns: 1fr;
+}
+
+body.staff-readonly-mode .left-column,
+body.staff-readonly-mode #actionToggle,
+body.staff-readonly-mode #actionButtonsPanel,
+body.staff-readonly-mode .btn-edit,
+body.staff-readonly-mode .btn-danger,
+body.staff-readonly-mode .btn-warning,
+body.staff-readonly-mode #store-center-tab,
+body.staff-readonly-mode #management-tab,
+body.staff-readonly-mode #rebate-tab,
+body.staff-readonly-mode #operating-cost-tab,
+body.staff-readonly-mode #data-convert-tab,
+body.staff-readonly-mode #ai-analysis-tab {
+    display: none !important;
+}
+
+body.staff-readonly-mode .right-column {
+    width: 100%;
+}
+
+body.staff-readonly-mode #scheduleTable th:last-child,
+body.staff-readonly-mode #scheduleTable td:last-child {
+    display: none;
+}
+
+body.staff-readonly-mode .tab-navigation {
+    justify-content: flex-start;
+}
+
 /* 管理页面内容样式 */
 .management-content {
     display: grid;

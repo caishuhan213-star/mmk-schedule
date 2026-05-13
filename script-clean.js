@@ -671,6 +671,10 @@ class ScheduleManager {
         this.currentSalaryTier = null;
         this.pendingSalaryAction = null;
         this.isAuthenticated = false;
+        this.currentUserRole = 'admin';
+        this.currentUserEmail = '';
+        this.isStaffReadOnly = false;
+        this.installReadOnlyMethodGuards();
         this.incomeChart = null;
         this.heatmapChart = null;
         this.sourceChannelOrderChart = null;
@@ -707,6 +711,7 @@ class ScheduleManager {
 
         this.checkBackupReminder();
         this.setupStoreContextUI();
+        this.initAccessControl();
 
         // 初始化自动导入
         this.initAutoImport();
@@ -720,6 +725,143 @@ class ScheduleManager {
                 // 店铺加载完成后再订阅当前店铺的数据
                 this.dbManager.subscribeToStore(this.currentStoreId, this._getSubscribeCallbacks());
             });
+        });
+    }
+
+    getAccessRoleForEmail(email) {
+        if (window.MMK_ACCESS_CONTROL && window.MMK_ACCESS_CONTROL.getRoleForEmail) {
+            return window.MMK_ACCESS_CONTROL.getRoleForEmail(email);
+        }
+
+        const normalized = String(email || '').trim().toLowerCase();
+        if (normalized === 'vincent.c0540@gmail.com') return 'staff';
+        return 'admin';
+    }
+
+    initAccessControl() {
+        const applyRole = (detail = {}) => {
+            const firebaseUser = (typeof firebase !== 'undefined' && firebase.auth)
+                ? firebase.auth().currentUser
+                : null;
+            const email = detail.email || (firebaseUser ? firebaseUser.email : '');
+            const role = detail.role || this.getAccessRoleForEmail(email);
+            this.applyAccessControl(role, email);
+        };
+
+        window.addEventListener('mmk-auth-role-change', (event) => {
+            applyRole(event.detail || {});
+        });
+
+        setTimeout(() => {
+            applyRole({
+                role: window.MMK_CURRENT_USER_ROLE,
+                email: window.MMK_CURRENT_USER_EMAIL,
+            });
+        }, 0);
+
+        const waitForAuth = (retries) => {
+            if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+                firebase.auth().onAuthStateChanged((user) => {
+                    applyRole({
+                        email: user ? user.email : '',
+                        role: user ? this.getAccessRoleForEmail(user.email) : 'denied',
+                    });
+                });
+            } else if (retries > 0) {
+                setTimeout(() => waitForAuth(retries - 1), 300);
+            }
+        };
+        waitForAuth(20);
+    }
+
+    applyAccessControl(role, email) {
+        this.currentUserRole = role || 'denied';
+        this.currentUserEmail = email || '';
+        this.isStaffReadOnly = this.currentUserRole === 'staff';
+
+        if (this.dbManager && this.dbManager.setReadOnly) {
+            this.dbManager.setReadOnly(this.isStaffReadOnly);
+        }
+
+        document.body.classList.toggle('staff-readonly-mode', this.isStaffReadOnly);
+        document.body.dataset.accessRole = this.currentUserRole;
+
+        this.applyAccessVisibility();
+    }
+
+    canAccessTab(tabName) {
+        if (!this.isStaffReadOnly) return true;
+        return ['schedule', 'charts'].includes(tabName);
+    }
+
+    canModifyData() {
+        return !this.isStaffReadOnly;
+    }
+
+    showReadOnlyMessage(action = '修改数据') {
+        alert(`店员账号仅可查看排班管理和数据图表，不能${action}。`);
+    }
+
+    requireModifyPermission(action) {
+        if (this.canModifyData()) return true;
+        this.showReadOnlyMessage(action);
+        return false;
+    }
+
+    applyAccessVisibility() {
+        const allowedStaffTabs = new Set(['schedule', 'charts']);
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            const tabName = btn.dataset.tab;
+            const hide = this.isStaffReadOnly && !allowedStaffTabs.has(tabName);
+            btn.classList.toggle('role-hidden', hide);
+        });
+
+        ['totalOperatingCost', 'netProfitFinal'].forEach(id => {
+            const card = document.getElementById(id)?.closest('.stat-card');
+            if (card) card.classList.toggle('role-hidden', this.isStaffReadOnly);
+        });
+
+        const activeTab = document.querySelector('.tab-content.active');
+        const activeTabName = activeTab ? activeTab.id.replace(/-tab$/, '') : 'schedule';
+        if (!this.canAccessTab(activeTabName)) {
+            this.switchTab('schedule');
+        }
+    }
+
+    installReadOnlyMethodGuards() {
+        if (this._readOnlyMethodGuardsInstalled) return;
+        this._readOnlyMethodGuardsInstalled = true;
+
+        const guardedMethods = [
+            'addSchedule', 'deleteSchedule', 'editSchedule', 'updateSchedule',
+            'openImportModal', 'processImportData', 'restoreAllData', 'clearAllData', 'loadSchedulesFromFileUI',
+            'addAttendanceFee', 'editAttendanceFee', 'deleteAttendanceFee', 'clearAllAttendanceFees',
+            'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
+            'addOperatingCost', 'editOperatingCost', 'deleteOperatingCost', 'clearAllOperatingCosts',
+            'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
+            'openAddProjectModal', 'openProjectListModal', 'saveProject', 'editProject', 'deleteProject',
+            'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
+            'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
+            'openStoreModal', 'saveStore', 'editStore', 'deleteStore',
+            'saveSalaryTiersData', 'saveSalaryPassword', 'saveSalaryTier', 'deleteSalaryTier',
+            'addEmployeeToTier', 'removeEmployeeFromTier',
+            'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
+            'importLatestData', 'toggleAutoImport',
+        ];
+
+        guardedMethods.forEach(methodName => {
+            const original = this[methodName];
+            if (typeof original !== 'function') return;
+
+            this[methodName] = (...args) => {
+                if (!this.canModifyData() && args[0] && typeof args[0].preventDefault === 'function') {
+                    args[0].preventDefault();
+                    if (typeof args[0].stopPropagation === 'function') args[0].stopPropagation();
+                }
+                if (!this.requireModifyPermission('修改数据')) return false;
+                return original.apply(this, args);
+            };
         });
     }
 
@@ -772,12 +914,14 @@ class ScheduleManager {
                 const localData = this[fieldName];
                 const isArray = Array.isArray(localData);
                 const hasData = isArray ? localData.length > 0 : (localData && Object.keys(localData).length > 0);
-                if (hasData) {
+                if (hasData && this.canModifyData()) {
                     console.log(`onSnapshot ${collectionName}: Firestore 为空，从 localStorage 迁移 ${isArray ? localData.length : 1} 条数据`);
                     Promise.resolve(saveFn.call(this)).catch(error => {
                         console.error(`迁移 ${collectionName} 到 Firestore 失败:`, error);
                     });
                     return; // 迁移后 onSnapshot 会再次触发，届时会走下面的更新逻辑
+                } else if (hasData) {
+                    console.log(`onSnapshot ${collectionName}: 只读账号跳过 localStorage 迁移`);
                 }
             }
             migrated[collectionName] = true;
@@ -806,12 +950,14 @@ class ScheduleManager {
                 if (!migrated['salaryTiers'] && (!data || (Array.isArray(data) && data.length === 0) || (typeof data === 'object' && Object.keys(data).length === 0))) {
                     migrated['salaryTiers'] = true;
                     const local = this.salaryTiers;
-                    if (local && Object.keys(local).length > 0) {
+                    if (local && Object.keys(local).length > 0 && this.canModifyData()) {
                         console.log('onSnapshot salaryTiers: Firestore 为空，从 localStorage 迁移');
                         this.saveSalaryTiersData().catch(error => {
                             console.error('迁移 salaryTiers 到 Firestore 失败:', error);
                         });
                         return;
+                    } else if (local && Object.keys(local).length > 0) {
+                        console.log('onSnapshot salaryTiers: 只读账号跳过 localStorage 迁移');
                     }
                 }
                 migrated['salaryTiers'] = true;
@@ -7342,6 +7488,11 @@ ${photoStatus}`;
 
     // Tab切换功能
     switchTab(tabName) {
+        if (!this.canAccessTab(tabName)) {
+            this.showReadOnlyMessage('访问该页面');
+            tabName = 'schedule';
+        }
+
         // 隐藏所有tab内容
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.remove('active');
@@ -7361,10 +7512,10 @@ ${photoStatus}`;
         });
 
         // 显示选中的tab内容
-        document.getElementById(`${tabName}-tab`).classList.add('active');
+        document.getElementById(`${tabName}-tab`)?.classList.add('active');
 
         // 激活选中的tab按钮
-        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+        document.querySelector(`[data-tab="${tabName}"]`)?.classList.add('active');
 
         // 如果切换到管理页面，刷新员工和项目列表
         if (tabName === 'management') {
@@ -10320,11 +10471,13 @@ ${photoStatus}`;
             if (firstSnapshot) {
                 firstSnapshot = false;
 
-                if (rows.length === 0 && localRows.length > 0) {
+                if (rows.length === 0 && localRows.length > 0 && this.canModifyData()) {
                     this.dbManager.saveJlPriceTable(localRows).catch(error => {
                         console.error('迁移接龙价格表到 Firebase 失败:', error);
                     });
                     return;
+                } else if (rows.length === 0 && localRows.length > 0) {
+                    console.log('接龙价格表：只读账号跳过 localStorage 迁移');
                 }
             }
 

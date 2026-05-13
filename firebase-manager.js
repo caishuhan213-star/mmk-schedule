@@ -221,8 +221,12 @@ class FirebaseManager {
                 // 显示用户邮箱（前部分）
                 const email = this.user.email;
                 const displayEmail = email.length > 20 ? email.substring(0, 20) + '...' : email;
-                userInfo.textContent = `👤 ${displayEmail}`;
-                userInfo.title = `已登录: ${email}`;
+                const role = window.MMK_ACCESS_CONTROL && window.MMK_ACCESS_CONTROL.getRoleForEmail
+                    ? window.MMK_ACCESS_CONTROL.getRoleForEmail(email)
+                    : 'admin';
+                const roleLabel = role === 'staff' ? '店员只读' : '管理员';
+                userInfo.textContent = `👤 ${displayEmail} · ${roleLabel}`;
+                userInfo.title = `已登录: ${email} (${roleLabel})`;
                 
             } else {
                 // 用户未登录

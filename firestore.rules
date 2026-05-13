@@ -1,20 +1,32 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in [
+          'caishuhan213@gmail.com',
+        ];
+    }
 
     // 拒绝所有未经身份验证的请求（默认拒绝）
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 团队共享数据：所有已登录用户都可以读写
+    // 团队共享数据：登录用户可读；只有管理员可写
     match /team/{teamId}/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // 测试连接用的临时集合（仅允许认证用户）
     match /_test/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

@@ -13,6 +13,7 @@ class FirebaseDataManager {
         this._commitChain = Promise.resolve();
         this._saveDebounceMs = 250;
         this._jlPriceTableUnsubscribe = null;
+        this._readOnly = false;
         // 导入模式：true 时 onSnapshot 回调不更新内存数据（防止批量写入时被旧快照覆盖）
         this._importing = false;
 
@@ -72,6 +73,10 @@ class FirebaseDataManager {
         return Promise.resolve();
     }
 
+    setReadOnly(readOnly) {
+        this._readOnly = !!readOnly;
+    }
+
     // 获取 Firestore 实例
     _getFirestore() {
         if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -83,6 +88,14 @@ class FirebaseDataManager {
     // 检查是否可以操作 Firestore
     _canOperate() {
         return this._currentUser && this._getFirestore();
+    }
+
+    _canWrite(collectionName) {
+        if (this._readOnly) {
+            console.warn(`FirebaseDataManager: 当前账号为只读模式，跳过写入 ${collectionName}`);
+            return false;
+        }
+        return true;
     }
 
     // 获取集合引用
@@ -209,6 +222,8 @@ class FirebaseDataManager {
     }
 
     async _setDocument(collectionName, item, storeId) {
+        if (!this._canWrite(collectionName)) return;
+
         if (!this._canOperate()) {
             console.warn(`FirebaseDataManager: 未登录，跳过保存 ${collectionName} 单条记录`);
             return;
@@ -250,6 +265,8 @@ class FirebaseDataManager {
     }
 
     async _setDocuments(collectionName, items, storeId) {
+        if (!this._canWrite(collectionName)) return;
+
         if (!this._canOperate()) {
             console.warn(`FirebaseDataManager: 未登录，跳过保存 ${collectionName} 多条记录`);
             return;
@@ -309,6 +326,8 @@ class FirebaseDataManager {
     }
 
     async _deleteDocument(collectionName, docId, storeId) {
+        if (!this._canWrite(collectionName)) return;
+
         if (!this._canOperate()) {
             console.warn(`FirebaseDataManager: 未登录，跳过删除 ${collectionName} 单条记录`);
             return;
@@ -341,6 +360,8 @@ class FirebaseDataManager {
     }
 
     async _flushCollectionSave(collectionName, storeId) {
+        if (!this._canWrite(collectionName)) return;
+
         const state = this._getCollectionState(storeId, collectionName);
         if (state.saving || !state.pendingPayload) return;
 
@@ -410,6 +431,8 @@ class FirebaseDataManager {
 
     // ====== 通用 save 方法 ======
     async _saveCollection(collectionName, items, storeId) {
+        if (!this._canWrite(collectionName)) return;
+
         if (!this._canOperate()) {
             console.warn(`FirebaseDataManager: 未登录，跳过保存 ${collectionName}`);
             return;
@@ -543,6 +566,8 @@ class FirebaseDataManager {
     }
 
     async saveJlPriceTable(rows) {
+        if (!this._canWrite('jlPriceTable')) return;
+
         if (!this._canOperate()) {
             console.warn('FirebaseDataManager: 未登录，跳过保存接龙价格表');
             return;
