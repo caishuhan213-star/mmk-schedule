@@ -11121,8 +11121,8 @@ ${photoStatus}`;
         
         try {
             // 数据源URL（GitHub Raw）
-            const dataUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk/main/data/latest.txt';
-            const metaUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk/main/data/meta.json';
+            const dataUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk-schedule/master/data/latest.txt';
+            const metaUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk-schedule/master/data/meta.json';
             
             // 获取元数据
             const metaResponse = await fetch(metaUrl + '?t=' + Date.now());
@@ -11184,8 +11184,8 @@ ${photoStatus}`;
         
         try {
             // 数据源URL
-            const dataUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk/main/data/latest.txt';
-            const metaUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk/main/data/meta.json';
+            const dataUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk-schedule/master/data/latest.txt';
+            const metaUrl = 'https://raw.githubusercontent.com/caishuhan213-star/mmk-schedule/master/data/meta.json';
             
             // 获取元数据
             const metaResponse = await fetch(metaUrl + '?t=' + Date.now());
