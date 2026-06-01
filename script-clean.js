@@ -739,10 +739,17 @@ class ScheduleManager {
     }
 
     initAccessControl() {
+        const tryGetFirebaseUser = () => {
+            try {
+                if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+                    return firebase.auth().currentUser;
+                }
+            } catch (_) { /* Firebase SDK 已加载但 initializeApp 尚未完成 */ }
+            return null;
+        };
+
         const applyRole = (detail = {}) => {
-            const firebaseUser = (typeof firebase !== 'undefined' && firebase.auth)
-                ? firebase.auth().currentUser
-                : null;
+            const firebaseUser = tryGetFirebaseUser();
             const email = detail.email || (firebaseUser ? firebaseUser.email : '');
             const role = detail.role || this.getAccessRoleForEmail(email);
             // 跳过初始化阶段的 denied 状态（auth-guard 在 onAuthStateChanged(null) 时
