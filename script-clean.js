@@ -789,8 +789,12 @@ class ScheduleManager {
         this.currentUserEmail = email || '';
         this.isStaffReadOnly = this.currentUserRole === 'staff';
 
+        // 员工权限：排班管理 + 数据管理 可读写，其余模块只读
+        this.canManageSchedule = this.isStaffReadOnly;
+        this.canManageData = this.isStaffReadOnly;
+
         if (this.dbManager && this.dbManager.setReadOnly) {
-            this.dbManager.setReadOnly(this.isStaffReadOnly);
+            this.dbManager.setReadOnly(false);
         }
 
         document.body.classList.toggle('staff-readonly-mode', this.isStaffReadOnly);
@@ -848,11 +852,51 @@ class ScheduleManager {
         if (!this.canAccessTab(activeTabName)) {
             this.switchTab('schedule');
         }
+
+        // 员工已授权的模块：恢复显示被CSS隐藏的UI元素
+        if (this.isStaffReadOnly && this.canManageSchedule) {
+            const showSelectors = [
+                '.left-column', '#actionToggle', '#actionButtonsPanel',
+                '.btn-edit', '.btn-danger', '.btn-warning',
+                '#backToStoreCenter',
+                '#scheduleTable th:last-child', '#scheduleTable td:last-child',
+            ];
+            showSelectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => { el.style.display = ''; });
+            });
+            // 恢复排班页左右分栏布局
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent) mainContent.style.gridTemplateColumns = '';
+        }
+
+        if (this.isStaffReadOnly && this.canManageData) {
+            const showSelectors = [
+                '#management-tab .employee-controls',
+                '#management-tab .project-controls',
+                '#management-tab .salary-management-section',
+            ];
+            showSelectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => { el.style.display = ''; });
+            });
+        }
     }
 
     installReadOnlyMethodGuards() {
         if (this._readOnlyMethodGuardsInstalled) return;
         this._readOnlyMethodGuardsInstalled = true;
+
+        // 员工可操作的方法白名单（排班管理 + 数据管理）
+        const staffAllowedMethods = new Set([
+            'addSchedule', 'deleteSchedule', 'editSchedule', 'updateSchedule',
+            'openImportModal', 'processImportData', 'restoreAllData', 'clearAllData', 'loadSchedulesFromFileUI',
+            'addAttendanceFee', 'editAttendanceFee', 'deleteAttendanceFee', 'clearAllAttendanceFees',
+            'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
+            'openAddProjectModal', 'openProjectListModal', 'saveProject', 'editProject', 'deleteProject',
+            'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
+            'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
+            'saveSalaryTiersData', 'saveSalaryPassword', 'saveSalaryTier', 'deleteSalaryTier',
+            'addEmployeeToTier', 'removeEmployeeFromTier',
+        ]);
 
         const guardedMethods = [
             'addSchedule', 'deleteSchedule', 'editSchedule', 'updateSchedule',
@@ -876,6 +920,10 @@ class ScheduleManager {
             if (typeof original !== 'function') return;
 
             this[methodName] = (...args) => {
+                // 员工被授权的方法直接放行
+                if (this.isStaffReadOnly && staffAllowedMethods.has(methodName)) {
+                    return original.apply(this, args);
+                }
                 if (!this.canModifyData() && args[0] && typeof args[0].preventDefault === 'function') {
                     args[0].preventDefault();
                     if (typeof args[0].stopPropagation === 'function') args[0].stopPropagation();
