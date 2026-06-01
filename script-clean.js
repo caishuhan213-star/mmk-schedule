@@ -745,6 +745,9 @@ class ScheduleManager {
                 : null;
             const email = detail.email || (firebaseUser ? firebaseUser.email : '');
             const role = detail.role || this.getAccessRoleForEmail(email);
+            // 跳过初始化阶段的 denied 状态（auth-guard 在 onAuthStateChanged(null) 时
+            // 会 publishRole(null) 产生 role='denied'），避免错误切换 UI
+            if (role === 'denied' && !email && !firebaseUser) return;
             this.applyAccessControl(role, email);
         };
 
@@ -762,9 +765,13 @@ class ScheduleManager {
         const waitForAuth = (retries) => {
             if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
                 firebase.auth().onAuthStateChanged((user) => {
+                    // 跳过 Firebase SDK 初始化阶段的 null 回调（正常行为：
+                    // onAuthStateChanged 先触发 null 再触发真实用户状态），
+                    // 避免 applyAccessControl('denied') 导致监听器销毁和 UI 闪退
+                    if (!user) return;
                     applyRole({
-                        email: user ? user.email : '',
-                        role: user ? this.getAccessRoleForEmail(user.email) : 'denied',
+                        email: user.email,
+                        role: this.getAccessRoleForEmail(user.email),
                     });
                 });
             } else if (retries > 0) {
@@ -775,6 +782,9 @@ class ScheduleManager {
     }
 
     applyAccessControl(role, email) {
+        // 去重：相同角色和邮箱不重复处理，防止 auth-guard 事件 + onAuthStateChanged 双重触发
+        if (this.currentUserRole === role && this.currentUserEmail === email) return;
+
         this.currentUserRole = role || 'denied';
         this.currentUserEmail = email || '';
         this.isStaffReadOnly = this.currentUserRole === 'staff';
