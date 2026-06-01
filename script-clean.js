@@ -861,29 +861,30 @@ class ScheduleManager {
         }
 
         // 员工已授权的模块：恢复显示被CSS隐藏的UI元素
+        // 使用 !important 优先级覆盖 CSS 中的 display: none !important
         if (this.isStaffReadOnly && this.canManageSchedule) {
-            const showSelectors = [
+            const scheduleElements = document.querySelectorAll([
                 '.left-column', '#actionToggle', '#actionButtonsPanel',
                 '.btn-edit', '.btn-danger', '.btn-warning',
                 '#backToStoreCenter',
                 '#scheduleTable th:last-child', '#scheduleTable td:last-child',
-            ];
-            showSelectors.forEach(sel => {
-                document.querySelectorAll(sel).forEach(el => { el.style.display = ''; });
+            ].join(','));
+            scheduleElements.forEach(el => {
+                el.style.setProperty('display', 'revert-layer', 'important');
             });
             // 恢复排班页左右分栏布局
             const mainContent = document.querySelector('.main-content');
-            if (mainContent) mainContent.style.gridTemplateColumns = '';
+            if (mainContent) mainContent.style.setProperty('grid-template-columns', 'revert-layer', 'important');
         }
 
         if (this.isStaffReadOnly && this.canManageData) {
-            const showSelectors = [
+            const dataElements = document.querySelectorAll([
                 '#management-tab .employee-controls',
                 '#management-tab .project-controls',
                 '#management-tab .salary-management-section',
-            ];
-            showSelectors.forEach(sel => {
-                document.querySelectorAll(sel).forEach(el => { el.style.display = ''; });
+            ].join(','));
+            dataElements.forEach(el => {
+                el.style.setProperty('display', 'revert-layer', 'important');
             });
         }
     }
