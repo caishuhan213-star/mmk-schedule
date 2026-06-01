@@ -734,7 +734,7 @@ class ScheduleManager {
         }
 
         const normalized = String(email || '').trim().toLowerCase();
-        if (['vincent.c0540@gmail.com', '751496696@qq.com'].includes(normalized)) return 'staff';
+        if (['vincent.c0540@gmail.com', '751496696@qq.com', '3103634039@qq.com'].includes(normalized)) return 'staff';
         return 'admin';
     }
 
