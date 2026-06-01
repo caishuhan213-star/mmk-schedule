@@ -860,32 +860,45 @@ class ScheduleManager {
             this.switchTab('schedule');
         }
 
-        // 员工已授权的模块：恢复显示被CSS隐藏的UI元素
-        // 使用 !important 优先级覆盖 CSS 中的 display: none !important
-        if (this.isStaffReadOnly && this.canManageSchedule) {
-            const scheduleElements = document.querySelectorAll([
-                '.left-column', '#actionToggle', '#actionButtonsPanel',
-                '.btn-edit', '.btn-danger', '.btn-warning',
-                '#backToStoreCenter',
-                '#scheduleTable th:last-child', '#scheduleTable td:last-child',
-            ].join(','));
-            scheduleElements.forEach(el => {
-                el.style.setProperty('display', 'revert-layer', 'important');
-            });
-            // 恢复排班页左右分栏布局
-            const mainContent = document.querySelector('.main-content');
-            if (mainContent) mainContent.style.setProperty('grid-template-columns', 'revert-layer', 'important');
-        }
+        // 清除旧注入样式
+        const oldStyle = document.getElementById('staff-override-style');
+        if (oldStyle) oldStyle.remove();
 
-        if (this.isStaffReadOnly && this.canManageData) {
-            const dataElements = document.querySelectorAll([
-                '#management-tab .employee-controls',
-                '#management-tab .project-controls',
-                '#management-tab .salary-management-section',
-            ].join(','));
-            dataElements.forEach(el => {
-                el.style.setProperty('display', 'revert-layer', 'important');
-            });
+        // 员工已授权的模块：注入高优先级 <style> 覆盖 CSS 中的 display: none !important
+        // 原理：注入到 <head> 末尾 → 源顺序靠后 → 同 !important 优先级下后者胜出
+        if (this.isStaffReadOnly) {
+            const overrides = [];
+
+            if (this.canManageSchedule) {
+                overrides.push(
+                    `body.staff-readonly-mode .left-column{display:revert!important}`,
+                    `body.staff-readonly-mode #actionToggle{display:revert!important}`,
+                    `body.staff-readonly-mode #actionButtonsPanel{display:revert!important}`,
+                    `body.staff-readonly-mode .btn-edit{display:revert!important}`,
+                    `body.staff-readonly-mode .btn-danger{display:revert!important}`,
+                    `body.staff-readonly-mode .btn-warning{display:revert!important}`,
+                    `body.staff-readonly-mode #backToStoreCenter{display:revert!important}`,
+                    `body.staff-readonly-mode #scheduleTable th:last-child{display:revert!important}`,
+                    `body.staff-readonly-mode #scheduleTable td:last-child{display:revert!important}`,
+                    `body.staff-readonly-mode .main-content{grid-template-columns:revert!important}`,
+                    `body.staff-readonly-mode .right-column{width:revert!important}`
+                );
+            }
+
+            if (this.canManageData) {
+                overrides.push(
+                    `body.staff-readonly-mode #management-tab .employee-controls{display:revert!important}`,
+                    `body.staff-readonly-mode #management-tab .project-controls{display:revert!important}`,
+                    `body.staff-readonly-mode #management-tab .salary-management-section{display:revert!important}`
+                );
+            }
+
+            if (overrides.length > 0) {
+                const style = document.createElement('style');
+                style.id = 'staff-override-style';
+                style.textContent = overrides.join('');
+                document.head.appendChild(style);
+            }
         }
     }
 
