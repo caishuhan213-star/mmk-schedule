@@ -796,9 +796,10 @@ class ScheduleManager {
         this.currentUserEmail = email || '';
         this.isStaffReadOnly = this.currentUserRole === 'staff';
 
-        // 员工权限：排班管理 + 数据管理 可读写，其余模块只读
+        // 员工权限：排班管理 + 数据管理 + 报告返现 可读写，其余模块只读
         this.canManageSchedule = this.isStaffReadOnly;
         this.canManageData = this.isStaffReadOnly;
+        this.canManageRebate = this.isStaffReadOnly;
 
         if (this.dbManager && this.dbManager.setReadOnly) {
             this.dbManager.setReadOnly(false);
@@ -896,6 +897,15 @@ class ScheduleManager {
                 );
             }
 
+            if (this.canManageRebate) {
+                overrides.push(
+                    `body.staff-readonly-mode #rebate-tab .rebate-form-container{display:revert!important}`,
+                    `body.staff-readonly-mode #rebate-tab .list-actions{display:revert!important}`,
+                    `body.staff-readonly-mode #rebate-tab #reportRebateTable th:last-child{display:revert!important}`,
+                    `body.staff-readonly-mode #rebate-tab #reportRebateTable td:last-child{display:revert!important}`
+                );
+            }
+
             if (overrides.length > 0) {
                 const style = document.createElement('style');
                 style.id = 'staff-override-style';
@@ -909,12 +919,13 @@ class ScheduleManager {
         if (this._readOnlyMethodGuardsInstalled) return;
         this._readOnlyMethodGuardsInstalled = true;
 
-        // 员工可操作的方法白名单（排班管理 + 数据管理）
+        // 员工可操作的方法白名单（排班管理 + 数据管理 + 报告返现）
         const staffAllowedMethods = new Set([
             'addSchedule', 'deleteSchedule', 'editSchedule', 'updateSchedule',
             'openImportModal', 'processImportData', 'restoreAllData', 'clearAllData', 'loadSchedulesFromFileUI',
             'addAttendanceFee', 'editAttendanceFee', 'deleteAttendanceFee', 'clearAllAttendanceFees',
             'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
+            'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
             'openAddProjectModal', 'openProjectListModal', 'saveProject', 'editProject', 'deleteProject',
             'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
             'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
