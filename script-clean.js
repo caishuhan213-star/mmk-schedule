@@ -871,6 +871,7 @@ class ScheduleManager {
 
             if (this.canManageSchedule) {
                 overrides.push(
+                    // display 恢复：revert 回到元素原生默认值（div→block, td→table-cell等），正确
                     `body.staff-readonly-mode .left-column{display:revert!important}`,
                     `body.staff-readonly-mode #actionToggle{display:revert!important}`,
                     `body.staff-readonly-mode #actionButtonsPanel{display:revert!important}`,
@@ -880,8 +881,10 @@ class ScheduleManager {
                     `body.staff-readonly-mode #backToStoreCenter{display:revert!important}`,
                     `body.staff-readonly-mode #scheduleTable th:last-child{display:revert!important}`,
                     `body.staff-readonly-mode #scheduleTable td:last-child{display:revert!important}`,
-                    `body.staff-readonly-mode .main-content{grid-template-columns:revert!important}`,
-                    `body.staff-readonly-mode .right-column{width:revert!important}`
+                    // 布局恢复：必须用管理员的明确值，revert 会回到浏览器初始值（grid-template-columns初始= none）
+                    `body.staff-readonly-mode .main-content{grid-template-columns:1fr 3fr!important}`,
+                    `body.staff-readonly-mode .right-column{width:auto!important}`,
+                    `body.staff-readonly-mode .tab-navigation{justify-content:center!important}`
                 );
             }
 
