@@ -2185,6 +2185,22 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
             this.clearAllOperatingCosts();
         });
 
+        // 导出运营成本 CSV（Excel）
+        const exportCSVBtn = document.getElementById('exportOperatingCostCSV');
+        if (exportCSVBtn) {
+            exportCSVBtn.addEventListener('click', () => {
+                this.exportOperatingCostCSV();
+            });
+        }
+
+        // 打印/导出运营成本 PDF
+        const exportPrintBtn = document.getElementById('exportOperatingCostPrint');
+        if (exportPrintBtn) {
+            exportPrintBtn.addEventListener('click', () => {
+                this.exportOperatingCostPrint();
+            });
+        }
+
         // 运营成本图表控制器
         const operatingCostChartDateRange = document.getElementById('operatingCostChartDateRange');
         const operatingCostChartType = document.getElementById('operatingCostChartType');
@@ -5536,6 +5552,157 @@ ${photoStatus}`;
             `;
             tbody.appendChild(row);
         });
+    }
+
+    // ---- 运营成本导出工具方法 ----
+
+    /** 获取导出时间范围内的数据（公共逻辑） */
+    _getFilteredCostsForExport() {
+        const startVal = document.getElementById('ocExportStartDate')?.value || '';
+        const endVal   = document.getElementById('ocExportEndDate')?.value   || '';
+
+        let filtered = [...this.operatingCosts].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        if (startVal) filtered = filtered.filter(c => c.date >= startVal);
+        if (endVal)   filtered = filtered.filter(c => c.date <= endVal);
+
+        if (filtered.length === 0) {
+            alert('所选时间范围内没有运营成本记录');
+            return null;
+        }
+        return { filtered, startVal, endVal };
+    }
+
+    /** 导出 CSV（可直接用 Excel 打开） */
+    exportOperatingCostCSV() {
+        const result = this._getFilteredCostsForExport();
+        if (!result) return;
+        const { filtered, startVal, endVal } = result;
+
+        // BOM 使 Excel 正确识别 UTF-8
+        const BOM = '\uFEFF';
+        const header = ['日期', '分类', '费用项目', '备注', '金额（元）'].join(',');
+        const rows = filtered.map(c => [
+            c.date,
+            `"${(c.category || '-').replace(/"/g, '""')}"`,
+            `"${(c.item || '').replace(/"/g, '""')}"`,
+            `"${(c.note || '-').replace(/"/g, '""')}"`,
+            c.amount.toFixed(2)
+        ].join(','));
+
+        // 汇总行
+        const total = filtered.reduce((s, c) => s + c.amount, 0);
+        rows.push(['', '', '', '合计', total.toFixed(2)].join(','));
+
+        const csvContent = BOM + [header, ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const rangeStr = startVal && endVal ? `${startVal}_${endVal}` :
+                         startVal ? `${startVal}起` :
+                         endVal   ? `至${endVal}` : '全部';
+        link.href     = url;
+        link.download = `运营成本_${rangeStr}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    /** 打印/导出 PDF（打开新窗口 → 触发浏览器打印对话框） */
+    exportOperatingCostPrint() {
+        const result = this._getFilteredCostsForExport();
+        if (!result) return;
+        const { filtered, startVal, endVal } = result;
+
+        const total = filtered.reduce((s, c) => s + c.amount, 0);
+        const rangeLabel = startVal || endVal
+            ? `${startVal || '不限'} 至 ${endVal || '不限'}`
+            : '全部日期';
+
+        const categoryTotals = {};
+        filtered.forEach(c => {
+            const cat = c.category || '其他';
+            categoryTotals[cat] = (categoryTotals[cat] || 0) + c.amount;
+        });
+        const catRows = Object.entries(categoryTotals)
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, amt]) => `<tr><td>${cat}</td><td>¥${amt.toFixed(2)}</td></tr>`)
+            .join('');
+
+        const dataRows = filtered.map((c, i) => `
+            <tr>
+                <td>${i + 1}</td>
+                <td>${c.date}</td>
+                <td>${c.category || '-'}</td>
+                <td>${c.item || ''}</td>
+                <td>${c.note || '-'}</td>
+                <td class="amount">¥${c.amount.toFixed(2)}</td>
+            </tr>`).join('');
+
+        const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>运营成本报表</title>
+<style>
+  body { font-family: "Microsoft YaHei", Arial, sans-serif; font-size: 13px; color: #333; padding: 20px; }
+  h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
+  .subtitle { text-align: center; color: #666; margin-bottom: 16px; font-size: 12px; }
+  .summary { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
+  .summary-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px 18px; min-width: 130px; }
+  .summary-card .label { font-size: 11px; color: #888; }
+  .summary-card .value { font-size: 18px; font-weight: bold; color: #c0392b; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th { background: #f5f5f5; font-weight: 600; padding: 7px 10px; text-align: left; border: 1px solid #ddd; }
+  td { padding: 6px 10px; border: 1px solid #eee; }
+  td.amount { text-align: right; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .total-row td { font-weight: bold; border-top: 2px solid #ccc; }
+  .cat-table { max-width: 400px; }
+  h2 { font-size: 14px; margin: 16px 0 8px; }
+  @media print { body { padding: 0; } button { display: none; } }
+</style>
+</head>
+<body>
+<h1>运营成本报表</h1>
+<div class="subtitle">统计周期：${rangeLabel} &nbsp;|&nbsp; 导出时间：${new Date().toLocaleString('zh-CN')}</div>
+
+<div class="summary">
+  <div class="summary-card"><div class="label">记录条数</div><div class="value">${filtered.length} 条</div></div>
+  <div class="summary-card"><div class="label">合计金额</div><div class="value">¥${total.toFixed(2)}</div></div>
+  <div class="summary-card"><div class="label">涉及分类</div><div class="value">${Object.keys(categoryTotals).length} 个</div></div>
+</div>
+
+<h2>按分类汇总</h2>
+<table class="cat-table">
+  <thead><tr><th>分类</th><th>合计金额</th></tr></thead>
+  <tbody>${catRows}</tbody>
+</table>
+
+<h2>明细记录</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>日期</th><th>分类</th><th>费用项目</th><th>备注</th><th>金额（元）</th></tr>
+  </thead>
+  <tbody>
+    ${dataRows}
+    <tr class="total-row">
+      <td colspan="5" style="text-align:right;">合计</td>
+      <td class="amount">¥${total.toFixed(2)}</td>
+    </tr>
+  </tbody>
+</table>
+<script>window.onload = () => window.print();<\/script>
+</body></html>`;
+
+        const printWin = window.open('', '_blank', 'width=900,height=700');
+        if (printWin) {
+            printWin.document.write(html);
+            printWin.document.close();
+        } else {
+            alert('弹窗被浏览器拦截，请允许弹窗后重试');
+        }
     }
 
     // 更新运营成本统计卡片

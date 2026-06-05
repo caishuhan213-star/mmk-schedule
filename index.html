@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=10">
+    <link rel="stylesheet" href="styles.css?v=11">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1340,6 +1340,20 @@
                             <h2 class="oc-card-title">成本记录</h2>
                             <button class="btn btn-secondary" id="clearOperatingCost">清除全部</button>
                         </div>
+                        <!-- 导出工具栏 -->
+                        <div class="oc-export-bar">
+                            <div class="oc-export-date-group">
+                                <label for="ocExportStartDate">开始日期</label>
+                                <input type="date" id="ocExportStartDate">
+                                <span class="oc-date-sep">至</span>
+                                <label for="ocExportEndDate">结束日期</label>
+                                <input type="date" id="ocExportEndDate">
+                            </div>
+                            <div class="oc-export-btn-group">
+                                <button class="btn btn-primary" id="exportOperatingCostCSV">📥 导出 Excel</button>
+                                <button class="btn btn-secondary" id="exportOperatingCostPrint">🖨️ 打印/PDF</button>
+                            </div>
+                        </div>
                         <div class="operating-cost-table-container">
                             <table id="operatingCostTable" class="operating-cost-table">
                                 <thead>
@@ -2023,7 +2037,7 @@
     <script src="firebase-manager.js?v=6"></script>
     <script src="firebase-data-manager.js?v=9"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=26"></script>
+    <script src="script-clean.js?v=27"></script>
     <script src="auth-guard.js?v=13"></script>
 </body>
 </html>

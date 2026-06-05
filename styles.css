@@ -1953,6 +1953,61 @@ body.staff-readonly-mode .tab-navigation {
     margin: 0;
 }
 
+.oc-card-header .oc-card-title {
+    margin: 0;
+}
+
+/* 导出工具栏 */
+.oc-export-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-background, #f8f9fa);
+    border: 1px solid var(--color-border, #e0e0e0);
+    border-radius: var(--radius-md, 6px);
+    margin-bottom: 12px;
+}
+
+.oc-export-date-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.oc-export-date-group label {
+    font-size: 12px;
+    color: var(--color-text-secondary, #666);
+    white-space: nowrap;
+}
+
+.oc-export-date-group input[type="date"] {
+    border: 1px solid var(--color-border, #ccc);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    color: var(--color-text, #333);
+    background: var(--color-surface, #fff);
+}
+
+.oc-date-sep {
+    font-size: 12px;
+    color: var(--color-text-secondary, #999);
+}
+
+.oc-export-btn-group {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+@media (max-width: 640px) {
+    .oc-export-bar { flex-direction: column; align-items: stretch; }
+    .oc-export-btn-group { margin-left: 0; }
+}
+
 /* 录入表单 */
 .oc-form .form-group {
     margin-bottom: 12px;
