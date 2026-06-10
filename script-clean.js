@@ -665,6 +665,15 @@ class ScheduleManager {
         this.editingInterviewFeeId = null;
         this.editingOperatingCostId = null;
         this.editingReportRebateId = null;
+        this.reportRebateFilter = {
+            mode: 'all',
+            date: '',
+            week: '',
+            month: '',
+            startDate: '',
+            endDate: ''
+        };
+        this.reportRebateSort = { field: 'date', direction: 'desc' };
         this.editingSalaryTierId = null;
         this.currentViewMode = 'day';
         this.currentSalaryProject = null;
@@ -2225,6 +2234,8 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         document.getElementById('clearReportRebate').addEventListener('click', () => {
             this.clearAllReportRebates();
         });
+
+        this.setupReportRebateFilterControls();
 
         // 项目管理事件
         document.getElementById('addProjectBtn').addEventListener('click', () => {
@@ -6046,6 +6057,265 @@ ${photoStatus}`;
         this.editingOperatingCostId = null;
     }
 
+    formatDateKey(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return '';
+        }
+
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    setupReportRebateFilterControls() {
+        const modeSelect = document.getElementById('reportRebateFilterMode');
+        if (!modeSelect) {
+            return;
+        }
+
+        modeSelect.addEventListener('change', () => {
+            this.reportRebateFilter.mode = modeSelect.value;
+            this.updateReportRebateFilterInputs();
+
+            if (modeSelect.value === 'all') {
+                this.clearReportRebateFilter(false);
+            }
+        });
+
+        document.getElementById('applyReportRebateFilter')?.addEventListener('click', () => {
+            this.applyReportRebateFilter();
+        });
+
+        document.getElementById('clearReportRebateFilter')?.addEventListener('click', () => {
+            this.clearReportRebateFilter();
+        });
+
+        document.querySelectorAll('#reportRebateTable .sortable').forEach(header => {
+            header.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.sortReportRebates(event.currentTarget.dataset.sort);
+            });
+        });
+
+        this.updateReportRebateFilterInputs();
+        this.updateReportRebateFilterSummary(this.getFilteredReportRebates().length);
+        this.updateReportRebateSortIcons();
+    }
+
+    updateReportRebateFilterInputs() {
+        const mode = document.getElementById('reportRebateFilterMode')?.value || this.reportRebateFilter.mode;
+        const inputGroups = {
+            day: document.getElementById('reportRebateDayFilter'),
+            week: document.getElementById('reportRebateWeekFilter'),
+            month: document.getElementById('reportRebateMonthFilter'),
+            custom: document.getElementById('reportRebateCustomFilter')
+        };
+
+        Object.values(inputGroups).forEach(group => {
+            if (group) {
+                group.style.display = 'none';
+            }
+        });
+
+        if (inputGroups[mode]) {
+            inputGroups[mode].style.display = '';
+        }
+    }
+
+    applyReportRebateFilter() {
+        const mode = document.getElementById('reportRebateFilterMode')?.value || 'all';
+        const nextFilter = {
+            mode,
+            date: document.getElementById('reportRebateFilterDate')?.value || '',
+            week: document.getElementById('reportRebateFilterWeek')?.value || '',
+            month: document.getElementById('reportRebateFilterMonth')?.value || '',
+            startDate: document.getElementById('reportRebateFilterStart')?.value || '',
+            endDate: document.getElementById('reportRebateFilterEnd')?.value || ''
+        };
+
+        if (mode === 'day' && !nextFilter.date) {
+            alert('请选择要筛选的日期');
+            return;
+        }
+        if (mode === 'week' && !nextFilter.week) {
+            alert('请选择要筛选的周');
+            return;
+        }
+        if (mode === 'month' && !nextFilter.month) {
+            alert('请选择要筛选的月份');
+            return;
+        }
+        if (mode === 'custom') {
+            if (!nextFilter.startDate || !nextFilter.endDate) {
+                alert('请选择完整的开始日期和结束日期');
+                return;
+            }
+            if (nextFilter.startDate > nextFilter.endDate) {
+                alert('开始日期不能晚于结束日期');
+                return;
+            }
+        }
+
+        this.reportRebateFilter = nextFilter;
+        this.updateReportRebateFilterInputs();
+        this.renderReportRebateTable();
+    }
+
+    clearReportRebateFilter(resetMode = true) {
+        this.reportRebateFilter = {
+            mode: 'all',
+            date: '',
+            week: '',
+            month: '',
+            startDate: '',
+            endDate: ''
+        };
+
+        const modeSelect = document.getElementById('reportRebateFilterMode');
+        if (resetMode && modeSelect) {
+            modeSelect.value = 'all';
+        }
+
+        ['reportRebateFilterDate', 'reportRebateFilterWeek', 'reportRebateFilterMonth', 'reportRebateFilterStart', 'reportRebateFilterEnd']
+            .forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.value = '';
+                }
+            });
+
+        this.updateReportRebateFilterInputs();
+        this.renderReportRebateTable();
+    }
+
+    getFilteredReportRebates(rebates = this.reportRebates) {
+        const filter = this.reportRebateFilter || { mode: 'all' };
+        const list = Array.isArray(rebates) ? rebates : [];
+
+        switch (filter.mode) {
+            case 'day':
+                return list.filter(rebate => rebate.date === filter.date);
+            case 'week': {
+                if (!filter.week) return list;
+                const [year, week] = filter.week.split('-W');
+                const weekStart = this.getWeekStartDate(parseInt(year, 10), parseInt(week, 10));
+                const weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekStart.getDate() + 6);
+                const startKey = this.formatDateKey(weekStart);
+                const endKey = this.formatDateKey(weekEnd);
+                return list.filter(rebate => rebate.date >= startKey && rebate.date <= endKey);
+            }
+            case 'month':
+                return filter.month
+                    ? list.filter(rebate => String(rebate.date || '').startsWith(filter.month))
+                    : list;
+            case 'custom':
+                if (!filter.startDate || !filter.endDate) return list;
+                return list.filter(rebate => rebate.date >= filter.startDate && rebate.date <= filter.endDate);
+            case 'all':
+            default:
+                return list;
+        }
+    }
+
+    getReportRebateFilterLabel() {
+        const filter = this.reportRebateFilter || { mode: 'all' };
+
+        switch (filter.mode) {
+            case 'day':
+                return filter.date ? `${this.formatDate(filter.date)}` : '按日筛选';
+            case 'week': {
+                if (!filter.week) return '按周筛选';
+                const [year, week] = filter.week.split('-W');
+                return `${year} 年第 ${parseInt(week, 10)} 周`;
+            }
+            case 'month':
+                return filter.month ? `${filter.month}` : '按月筛选';
+            case 'custom':
+                return filter.startDate && filter.endDate
+                    ? `${this.formatDate(filter.startDate)} 至 ${this.formatDate(filter.endDate)}`
+                    : '自定义区间';
+            case 'all':
+            default:
+                return '全部时间';
+        }
+    }
+
+    updateReportRebateFilterSummary(count) {
+        const summary = document.getElementById('reportRebateFilterSummary');
+        if (!summary) {
+            return;
+        }
+
+        const visibleCount = typeof count === 'number' ? count : this.getFilteredReportRebates().length;
+        summary.textContent = `当前筛选：${this.getReportRebateFilterLabel()}，共 ${visibleCount} 条记录`;
+    }
+
+    sortReportRebates(field) {
+        if (!field) {
+            return;
+        }
+
+        if (this.reportRebateSort.field === field) {
+            this.reportRebateSort.direction = this.reportRebateSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.reportRebateSort.field = field;
+            this.reportRebateSort.direction = field === 'date' ? 'desc' : 'asc';
+        }
+
+        this.renderReportRebateTable();
+    }
+
+    getSortedReportRebatesFromArray(rebates) {
+        const sort = this.reportRebateSort || { field: 'date', direction: 'desc' };
+
+        return [...rebates].sort((a, b) => {
+            let aValue;
+            let bValue;
+
+            switch (sort.field) {
+                case 'user':
+                    aValue = String(a.userName || '').toLowerCase();
+                    bValue = String(b.userName || '').toLowerCase();
+                    break;
+                case 'employee':
+                    aValue = String(a.employeeName || '').toLowerCase();
+                    bValue = String(b.employeeName || '').toLowerCase();
+                    break;
+                case 'amount':
+                    aValue = Number(a.amount) || 0;
+                    bValue = Number(b.amount) || 0;
+                    break;
+                case 'date':
+                default:
+                    aValue = a.date || '';
+                    bValue = b.date || '';
+                    break;
+            }
+
+            if (aValue < bValue) return sort.direction === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+
+    updateReportRebateSortIcons() {
+        const sort = this.reportRebateSort || { field: 'date', direction: 'desc' };
+
+        document.querySelectorAll('#reportRebateTable .sort-icon').forEach(icon => {
+            icon.textContent = '↕';
+            icon.className = 'sort-icon';
+        });
+
+        const currentHeader = document.querySelector(`#reportRebateTable [data-sort="${sort.field}"] .sort-icon`);
+        if (currentHeader) {
+            currentHeader.textContent = sort.direction === 'asc' ? '↑' : '↓';
+            currentHeader.className = `sort-icon active ${sort.direction}`;
+        }
+    }
+
     // 添加报告返现
     addReportRebate() {
         const date = document.getElementById('reportRebateDate').value;
@@ -6147,16 +6417,23 @@ ${photoStatus}`;
             return;
         }
 
+        const filteredRebates = this.getFilteredReportRebates();
+
         if (this.reportRebates.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无报告返现记录</td></tr>';
-            this.updateRebateStats();
+            this.updateRebateStats(filteredRebates);
+            this.updateReportRebateSortIcons();
             return;
         }
 
-        // 按日期排序（最新的在前）
-        const sortedRebates = [...this.reportRebates].sort((a, b) => {
-            return new Date(b.date) - new Date(a.date);
-        });
+        if (filteredRebates.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="no-data">当前时间筛选下暂无报告返现记录</td></tr>';
+            this.updateRebateStats(filteredRebates);
+            this.updateReportRebateSortIcons();
+            return;
+        }
+
+        const sortedRebates = this.getSortedReportRebatesFromArray(filteredRebates);
 
         tbody.innerHTML = sortedRebates.map(rebate => `
             <tr>
@@ -6172,14 +6449,16 @@ ${photoStatus}`;
             </tr>
         `).join('');
 
-        this.updateRebateStats();
+        this.updateRebateStats(filteredRebates);
+        this.updateReportRebateSortIcons();
     }
 
     // 更新报告返现统计信息
-    updateRebateStats() {
-        const totalAmount = this.reportRebates.reduce((sum, rebate) => sum + rebate.amount, 0);
-        const totalCount = this.reportRebates.length;
-        const uniqueUsers = new Set(this.reportRebates.map(rebate => rebate.userName)).size;
+    updateRebateStats(rebates = this.getFilteredReportRebates()) {
+        const visibleRebates = Array.isArray(rebates) ? rebates : [];
+        const totalAmount = visibleRebates.reduce((sum, rebate) => sum + rebate.amount, 0);
+        const totalCount = visibleRebates.length;
+        const uniqueUsers = new Set(visibleRebates.map(rebate => rebate.userName)).size;
 
         const totalAmountElement = document.getElementById('totalRebateAmount');
         const totalCountElement = document.getElementById('totalRebateCount');
@@ -6194,6 +6473,8 @@ ${photoStatus}`;
         if (totalUsersElement) {
             totalUsersElement.textContent = uniqueUsers;
         }
+
+        this.updateReportRebateFilterSummary(totalCount);
     }
 
     // 删除报告返现记录

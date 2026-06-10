@@ -2246,6 +2246,69 @@ body.staff-readonly-mode .tab-navigation {
     gap: 25px;
 }
 
+.rebate-filter-bar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.rebate-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 150px;
+}
+
+.rebate-filter-custom {
+    min-width: 320px;
+}
+
+.rebate-filter-group label {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+}
+
+.rebate-filter-control {
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+}
+
+.rebate-filter-range {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.rebate-filter-range span {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+}
+
+.rebate-filter-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.rebate-filter-summary {
+    flex: 1 1 100%;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
 .rebate-stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -3546,6 +3609,32 @@ body.staff-readonly-mode .tab-navigation {
 
     .rebate-form-container {
         position: static;
+    }
+
+    .rebate-filter-bar {
+        align-items: stretch;
+    }
+
+    .rebate-filter-group,
+    .rebate-filter-custom {
+        min-width: 100%;
+    }
+
+    .rebate-filter-range {
+        grid-template-columns: 1fr;
+    }
+
+    .rebate-filter-range span {
+        text-align: center;
+    }
+
+    .rebate-filter-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .rebate-filter-actions .btn {
+        flex: 1 1 140px;
     }
 
     .rebate-stats {

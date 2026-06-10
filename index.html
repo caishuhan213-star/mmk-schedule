@@ -545,6 +545,44 @@
                                     <button class="btn btn-secondary" id="clearReportRebate">清除所有返现记录</button>
                                 </div>
                             </div>
+
+                            <div class="rebate-filter-bar">
+                                <div class="rebate-filter-group">
+                                    <label for="reportRebateFilterMode">时间筛选</label>
+                                    <select id="reportRebateFilterMode" class="rebate-filter-control">
+                                        <option value="all">全部时间</option>
+                                        <option value="day">按日筛选</option>
+                                        <option value="week">按周筛选</option>
+                                        <option value="month">按月筛选</option>
+                                        <option value="custom">自定义区间</option>
+                                    </select>
+                                </div>
+                                <div class="rebate-filter-group rebate-filter-input" id="reportRebateDayFilter" style="display: none;">
+                                    <label for="reportRebateFilterDate">日期</label>
+                                    <input type="date" id="reportRebateFilterDate" class="rebate-filter-control">
+                                </div>
+                                <div class="rebate-filter-group rebate-filter-input" id="reportRebateWeekFilter" style="display: none;">
+                                    <label for="reportRebateFilterWeek">周</label>
+                                    <input type="week" id="reportRebateFilterWeek" class="rebate-filter-control">
+                                </div>
+                                <div class="rebate-filter-group rebate-filter-input" id="reportRebateMonthFilter" style="display: none;">
+                                    <label for="reportRebateFilterMonth">月份</label>
+                                    <input type="month" id="reportRebateFilterMonth" class="rebate-filter-control">
+                                </div>
+                                <div class="rebate-filter-group rebate-filter-input rebate-filter-custom" id="reportRebateCustomFilter" style="display: none;">
+                                    <label for="reportRebateFilterStart">区间</label>
+                                    <div class="rebate-filter-range">
+                                        <input type="date" id="reportRebateFilterStart" class="rebate-filter-control">
+                                        <span>至</span>
+                                        <input type="date" id="reportRebateFilterEnd" class="rebate-filter-control">
+                                    </div>
+                                </div>
+                                <div class="rebate-filter-actions">
+                                    <button type="button" class="btn btn-primary" id="applyReportRebateFilter">应用筛选</button>
+                                    <button type="button" class="btn btn-secondary" id="clearReportRebateFilter">清除筛选</button>
+                                </div>
+                                <div class="rebate-filter-summary" id="reportRebateFilterSummary">当前显示全部返现记录</div>
+                            </div>
                             
                             <!-- 统计卡片 -->
                             <div class="rebate-stats">
