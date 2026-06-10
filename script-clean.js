@@ -909,9 +909,11 @@ class ScheduleManager {
             if (this.canManageRebate) {
                 overrides.push(
                     `body.staff-readonly-mode #rebate-tab .rebate-form-container{display:revert!important}`,
+                    `body.staff-readonly-mode #rebate-tab #openReportRebateModal{display:inline-flex!important}`,
                     `body.staff-readonly-mode #rebate-tab .list-actions{display:revert!important}`,
-                    `body.staff-readonly-mode #rebate-tab #reportRebateTable th:last-child{display:revert!important}`,
-                    `body.staff-readonly-mode #rebate-tab #reportRebateTable td:last-child{display:revert!important}`
+                    `body.staff-readonly-mode #rebate-tab .report-rebate-card-actions{display:flex!important}`,
+                    `body.staff-readonly-mode #rebate-tab .report-rebate-card-actions .btn-edit{display:inline-flex!important}`,
+                    `body.staff-readonly-mode #rebate-tab .report-rebate-card-actions .btn-danger{display:inline-flex!important}`
                 );
             }
 
@@ -2228,6 +2230,22 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         document.getElementById('reportRebateForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.addReportRebate();
+        });
+
+        document.getElementById('openReportRebateModal')?.addEventListener('click', () => {
+            this.openReportRebateModal();
+        });
+
+        document.getElementById('closeReportRebateModal')?.addEventListener('click', () => {
+            this.closeReportRebateModal();
+        });
+
+        document.getElementById('cancelReportRebateModal')?.addEventListener('click', () => {
+            this.cancelEditReportRebate();
+        });
+
+        document.querySelector('#reportRebateModal .rebate-modal-backdrop')?.addEventListener('click', () => {
+            this.closeReportRebateModal();
         });
 
         // 清除所有报告返现
@@ -6316,6 +6334,64 @@ ${photoStatus}`;
         }
     }
 
+    escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    openReportRebateModal(resetForm = true) {
+        const modal = document.getElementById('reportRebateModal');
+        if (!modal) return;
+
+        if (resetForm) {
+            this.clearReportRebateForm();
+        }
+
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        const dateInput = document.getElementById('reportRebateDate');
+        if (dateInput) {
+            setTimeout(() => dateInput.focus(), 0);
+        }
+    }
+
+    closeReportRebateModal(resetForm = true) {
+        const modal = document.getElementById('reportRebateModal');
+        if (!modal) return;
+
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+
+        if (resetForm) {
+            this.clearReportRebateForm();
+        }
+    }
+
+    updateReportRebateModalState(isEditing) {
+        const title = document.getElementById('reportRebateModalTitle');
+        const subtitle = document.getElementById('reportRebateModalSubtitle');
+        const submitButton = document.getElementById('reportRebateSubmitBtn');
+
+        if (title) {
+            title.textContent = isEditing ? '编辑返现记录' : '新增返现记录';
+        }
+        if (subtitle) {
+            subtitle.textContent = isEditing
+                ? '点击列表中的编辑后弹出，复用同一套表单并预填原记录'
+                : '录入后返回列表，页面默认专注浏览报告内容';
+        }
+        if (submitButton) {
+            submitButton.textContent = isEditing ? '保存修改' : '保存返现记录';
+            submitButton.classList.toggle('btn-warning', isEditing);
+            submitButton.classList.toggle('btn-primary', !isEditing);
+        }
+    }
+
     // 添加报告返现
     addReportRebate() {
         const date = document.getElementById('reportRebateDate').value;
@@ -6345,6 +6421,7 @@ ${photoStatus}`;
                 this.renderReportRebateTable();
                 this.updateStats();
                 this.clearReportRebateForm();
+                this.closeReportRebateModal(false);
                 this.showSuccessMessage('报告返现记录更新成功！');
             }
         } else {
@@ -6363,6 +6440,7 @@ ${photoStatus}`;
             this.renderReportRebateTable();
             this.updateStats();
             this.clearReportRebateForm();
+            this.closeReportRebateModal(false);
             this.showSuccessMessage('报告返现记录添加成功！');
         }
     }
@@ -6386,48 +6464,35 @@ ${photoStatus}`;
         // 标记为编辑模式
         this.editingReportRebateId = id;
 
-        // 更新表单标题和按钮文本
-        const formTitle = document.querySelector('.rebate-form-container h3');
-        const submitButton = document.querySelector('#reportRebateForm button[type="submit"]');
-        
-        if (formTitle) {
-            formTitle.innerHTML = '编辑返现记录 <button type="button" class="btn-cancel-edit" onclick="scheduleManager.cancelEditReportRebate()">取消编辑</button>';
-        }
-        if (submitButton) {
-            submitButton.textContent = '更新返现记录';
-            submitButton.classList.add('btn-warning');
-            submitButton.classList.remove('btn-primary');
-        }
-
-        // 滚动到表单顶部
-        document.querySelector('.rebate-form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        this.updateReportRebateModalState(true);
+        this.openReportRebateModal(false);
     }
 
     // 取消编辑报告返现
     cancelEditReportRebate() {
         this.clearReportRebateForm();
-        this.showSuccessMessage('已取消编辑');
+        this.closeReportRebateModal(false);
     }
 
     // 渲染报告返现表格
     renderReportRebateTable() {
-        const tbody = document.getElementById('reportRebateTableBody');
+        const list = document.getElementById('reportRebateList');
         
-        if (!tbody) {
+        if (!list) {
             return;
         }
 
         const filteredRebates = this.getFilteredReportRebates();
 
         if (this.reportRebates.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无报告返现记录</td></tr>';
+            list.innerHTML = '<div class="report-rebate-empty">暂无报告返现记录</div>';
             this.updateRebateStats(filteredRebates);
             this.updateReportRebateSortIcons();
             return;
         }
 
         if (filteredRebates.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="no-data">当前时间筛选下暂无报告返现记录</td></tr>';
+            list.innerHTML = '<div class="report-rebate-empty">当前时间筛选下暂无报告返现记录</div>';
             this.updateRebateStats(filteredRebates);
             this.updateReportRebateSortIcons();
             return;
@@ -6435,20 +6500,20 @@ ${photoStatus}`;
 
         const sortedRebates = this.getSortedReportRebatesFromArray(filteredRebates);
 
-        tbody.innerHTML = sortedRebates.map(rebate => `
-            <tr>
-                <td>${this.formatDate(rebate.date)}</td>
-                <td>${rebate.userName}</td>
-                <td>${rebate.employeeName}</td>
-                <td class="report-content-cell">
-                    <div class="report-content-preview">${rebate.content}</div>
-                </td>
-                <td class="report-amount-cell">¥${rebate.amount.toFixed(2)}</td>
-                <td class="report-action-cell">
-                    <button class="btn btn-edit" onclick="scheduleManager.editReportRebate(${rebate.id})">编辑</button>
-                    <button class="btn btn-danger" onclick="scheduleManager.deleteReportRebate(${rebate.id})">删除</button>
-                </td>
-            </tr>
+        list.innerHTML = sortedRebates.map(rebate => `
+            <article class="report-rebate-card">
+                <div class="report-rebate-card-meta">
+                    <span class="report-rebate-date">${this.escapeHtml(this.formatDate(rebate.date))}</span>
+                    <span class="report-rebate-user">${this.escapeHtml(rebate.userName)}</span>
+                    <span class="report-rebate-employee">${this.escapeHtml(rebate.employeeName)}</span>
+                    <span class="report-rebate-amount">¥${Number(rebate.amount || 0).toFixed(2)}</span>
+                    <div class="report-rebate-card-actions">
+                        <button class="btn btn-edit" onclick="scheduleManager.editReportRebate(${rebate.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="scheduleManager.deleteReportRebate(${rebate.id})">删除</button>
+                    </div>
+                </div>
+                <div class="report-rebate-card-content">${this.escapeHtml(rebate.content)}</div>
+            </article>
         `).join('');
 
         this.updateRebateStats(filteredRebates);
@@ -6522,19 +6587,7 @@ ${photoStatus}`;
     clearReportRebateForm() {
         document.getElementById('reportRebateForm').reset();
         this.editingReportRebateId = null;
-
-        // 恢复表单标题和按钮
-        const formTitle = document.querySelector('.rebate-form-container h3');
-        const submitButton = document.querySelector('#reportRebateForm button[type="submit"]');
-        
-        if (formTitle) {
-            formTitle.textContent = '添加返现记录';
-        }
-        if (submitButton) {
-            submitButton.textContent = '添加返现记录';
-            submitButton.classList.remove('btn-warning');
-            submitButton.classList.add('btn-primary');
-        }
+        this.updateReportRebateModalState(false);
     }
 
     // 渲染员工提成统计

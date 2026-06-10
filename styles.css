@@ -332,9 +332,9 @@ body.staff-readonly-mode #management-tab .employee-controls,
 body.staff-readonly-mode #management-tab .project-controls,
 body.staff-readonly-mode #management-tab .salary-management-section,
 body.staff-readonly-mode #rebate-tab .rebate-form-container,
+body.staff-readonly-mode #rebate-tab #openReportRebateModal,
 body.staff-readonly-mode #rebate-tab .list-actions,
-body.staff-readonly-mode #rebate-tab #reportRebateTable th:last-child,
-body.staff-readonly-mode #rebate-tab #reportRebateTable td:last-child,
+body.staff-readonly-mode #rebate-tab .report-rebate-card-actions,
 body.staff-readonly-mode #data-convert-tab #jlImportCsv,
 body.staff-readonly-mode #data-convert-tab #jlManagePrice,
 body.staff-readonly-mode #data-convert-tab .jl-price-actions,
@@ -2210,10 +2210,17 @@ body.staff-readonly-mode .tab-navigation {
     box-shadow: var(--shadow-md);
 }
 
+.rebate-section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
 .rebate-main-content {
-    display: grid;
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-    gap: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
     margin-top: 24px;
 }
 
@@ -2223,21 +2230,12 @@ body.staff-readonly-mode .tab-navigation {
     border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
     height: fit-content;
-    position: sticky;
-    top: 20px;
 }
 
 .rebate-form-container h3 {
-    margin: 0 0 18px 0;
+    margin: 0;
     color: var(--color-text);
     font-size: var(--font-size-lg);
-    border-bottom: 2px solid var(--color-primary);
-    padding-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
 }
 
 .rebate-form-container .form-group {
@@ -2251,12 +2249,80 @@ body.staff-readonly-mode .tab-navigation {
 }
 
 .rebate-form-container textarea {
-    min-height: 92px;
+    min-height: 170px;
     resize: vertical;
 }
 
 .rebate-form-container .btn {
     margin-top: 6px;
+}
+
+.rebate-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 10000;
+}
+
+.rebate-modal.open {
+    display: flex;
+}
+
+.rebate-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.72);
+}
+
+.rebate-modal-content {
+    position: relative;
+    width: min(100%, 560px);
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    box-shadow: var(--shadow-xl);
+}
+
+.rebate-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.rebate-modal-header p {
+    margin: 6px 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.rebate-modal-close {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.rebate-modal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.rebate-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 14px;
 }
 
 .rebate-table-container-wrapper {
@@ -2354,6 +2420,70 @@ body.staff-readonly-mode .tab-navigation {
 
 .rebate-stats .stat-card span {
     font-size: var(--font-size-xl);
+}
+
+.report-rebate-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: min(70vh, 760px);
+    overflow-y: auto;
+    padding: 12px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.report-rebate-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.report-rebate-card-meta {
+    display: grid;
+    grid-template-columns: 110px 100px 110px 90px minmax(120px, 1fr);
+    gap: 12px;
+    align-items: center;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+}
+
+.report-rebate-amount {
+    color: var(--color-danger);
+    white-space: nowrap;
+}
+
+.report-rebate-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.report-rebate-card-actions .btn {
+    min-height: 30px;
+    padding: 5px 10px;
+    font-size: var(--font-size-xs);
+}
+
+.report-rebate-card-content {
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.report-rebate-empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-style: italic;
 }
 
 .report-rebate-table-container {
@@ -3707,13 +3837,29 @@ body.staff-readonly-mode .tab-navigation {
         padding: 18px;
     }
 
+    .rebate-section-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
     .rebate-main-content {
-        grid-template-columns: 1fr;
         gap: 12px;
     }
 
-    .rebate-form-container {
-        position: static;
+    .rebate-modal {
+        padding: 14px;
+    }
+
+    .rebate-modal-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rebate-modal-actions {
+        flex-direction: column-reverse;
+    }
+
+    .rebate-modal-actions .btn {
+        width: 100%;
     }
 
     .rebate-filter-bar {
@@ -3749,6 +3895,20 @@ body.staff-readonly-mode .tab-navigation {
     .rebate-stats {
         grid-template-columns: repeat(2, 1fr);
         gap: 8px;
+    }
+
+    .report-rebate-card-list {
+        max-height: none;
+    }
+
+    .report-rebate-card-meta {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .report-rebate-card-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
     }
 
     .commission-cards {

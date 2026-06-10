@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=12">
+    <link rel="stylesheet" href="styles.css?v=13">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -501,43 +501,16 @@
             <div class="rebate-content">
                 <!-- 报告返现管理区域 -->
                 <section class="report-rebate-section-page">
-                    <div class="section-header">
-                        <h2>报告返现管理</h2>
-                        <p>记录用户报告返现费用</p>
+                    <div class="section-header rebate-section-header">
+                        <div>
+                            <h2>报告返现管理</h2>
+                            <p>按时间浏览报告内容，新增和编辑通过弹窗完成</p>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="openReportRebateModal">+ 新增返现</button>
                     </div>
                     
                     <div class="rebate-main-content">
-                        <!-- 左侧表单 -->
-                        <div class="rebate-form-container">
-                            <h3>添加返现记录</h3>
-                            <form id="reportRebateForm">
-                                <div class="form-group">
-                                    <label for="reportRebateDate">时间</label>
-                                    <input type="date" id="reportRebateDate" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="reportRebateUserName">用户名称</label>
-                                    <input type="text" id="reportRebateUserName" placeholder="请输入用户名称" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="reportRebateEmployee">服务员工</label>
-                                    <select id="reportRebateEmployee" required>
-                                        <option value="">请选择服务员工</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="reportRebateContent">报告内容</label>
-                                    <textarea id="reportRebateContent" placeholder="请输入报告内容" rows="4" required></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label for="reportRebateAmount">返现费用</label>
-                                    <input type="number" id="reportRebateAmount" placeholder="请输入返现费用" min="0" step="0.01" required>
-                                </div>
-                                <button type="submit" class="btn btn-primary">添加返现记录</button>
-                            </form>
-                        </div>
-
-                        <!-- 右侧表格 -->
+                        <!-- 记录浏览区 -->
                         <div class="rebate-table-container-wrapper">
                             <div class="list-header">
                                 <h3>报告返现记录</h3>
@@ -600,25 +573,52 @@
                                 </div>
                             </div>
 
-                            <div class="report-rebate-table-container">
-                                <table id="reportRebateTable" class="report-rebate-table">
-                                    <thead>
-                                        <tr>
-                                            <th class="sortable" data-sort="date">时间 <span class="sort-icon">↕</span></th>
-                                            <th class="sortable" data-sort="user">用户名称 <span class="sort-icon">↕</span></th>
-                                            <th class="sortable" data-sort="employee">服务员工 <span class="sort-icon">↕</span></th>
-                                            <th>报告内容</th>
-                                            <th class="sortable" data-sort="amount">返现费用 <span class="sort-icon">↕</span></th>
-                                            <th>操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="reportRebateTableBody">
-                                        <tr>
-                                            <td colspan="6" class="no-data">暂无报告返现记录</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            <div id="reportRebateList" class="report-rebate-card-list">
+                                <div class="report-rebate-empty">暂无报告返现记录</div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div id="reportRebateModal" class="rebate-modal" aria-hidden="true">
+                        <div class="rebate-modal-backdrop"></div>
+                        <div class="rebate-form-container rebate-modal-content" role="dialog" aria-modal="true" aria-labelledby="reportRebateModalTitle">
+                            <div class="rebate-modal-header">
+                                <div>
+                                    <h3 id="reportRebateModalTitle">新增返现记录</h3>
+                                    <p id="reportRebateModalSubtitle">录入后返回列表，页面默认专注浏览报告内容</p>
+                                </div>
+                                <button type="button" class="rebate-modal-close" id="closeReportRebateModal" aria-label="关闭">×</button>
+                            </div>
+                            <form id="reportRebateForm">
+                                <div class="rebate-modal-grid">
+                                    <div class="form-group">
+                                        <label for="reportRebateDate">时间</label>
+                                        <input type="date" id="reportRebateDate" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="reportRebateUserName">用户名称</label>
+                                        <input type="text" id="reportRebateUserName" placeholder="请输入用户名称" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="reportRebateEmployee">服务员工</label>
+                                        <select id="reportRebateEmployee" required>
+                                            <option value="">请选择服务员工</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="reportRebateAmount">返现费用</label>
+                                        <input type="number" id="reportRebateAmount" placeholder="请输入返现费用" min="0" step="0.01" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportRebateContent">报告内容</label>
+                                    <textarea id="reportRebateContent" placeholder="请输入完整报告内容" rows="8" required></textarea>
+                                </div>
+                                <div class="rebate-modal-actions">
+                                    <button type="button" class="btn btn-secondary" id="cancelReportRebateModal">取消</button>
+                                    <button type="submit" class="btn btn-primary" id="reportRebateSubmitBtn">保存返现记录</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </section>
@@ -2075,7 +2075,7 @@
     <script src="firebase-manager.js?v=6"></script>
     <script src="firebase-data-manager.js?v=9"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=28"></script>
+    <script src="script-clean.js?v=29"></script>
     <script src="auth-guard.js?v=13"></script>
 </body>
 </html>
