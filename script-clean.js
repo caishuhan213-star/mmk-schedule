@@ -6440,9 +6440,11 @@ ${photoStatus}`;
                 <td>${this.formatDate(rebate.date)}</td>
                 <td>${rebate.userName}</td>
                 <td>${rebate.employeeName}</td>
-                <td style="max-width: 200px; white-space: pre-wrap; word-wrap: break-word;">${rebate.content}</td>
-                <td style="color: #dc3545; font-weight: 600;">¥${rebate.amount.toFixed(2)}</td>
-                <td>
+                <td class="report-content-cell">
+                    <div class="report-content-preview">${rebate.content}</div>
+                </td>
+                <td class="report-amount-cell">¥${rebate.amount.toFixed(2)}</td>
+                <td class="report-action-cell">
                     <button class="btn btn-edit" onclick="scheduleManager.editReportRebate(${rebate.id})">编辑</button>
                     <button class="btn btn-danger" onclick="scheduleManager.deleteReportRebate(${rebate.id})">删除</button>
                 </td>
