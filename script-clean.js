@@ -930,7 +930,7 @@ class ScheduleManager {
         if (this._readOnlyMethodGuardsInstalled) return;
         this._readOnlyMethodGuardsInstalled = true;
 
-        // 员工可操作的方法白名单（排班管理 + 数据管理 + 报告返现）
+        // 员工可操作的方法白名单（排班管理 + 数据管理 + 报告返现 + 数据转化）
         const staffAllowedMethods = new Set([
             'addSchedule', 'deleteSchedule', 'editSchedule', 'updateSchedule',
             'openImportModal', 'processImportData', 'restoreAllData', 'clearAllData', 'loadSchedulesFromFileUI',
@@ -942,6 +942,8 @@ class ScheduleManager {
             'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
             'saveSalaryTiersData', 'saveSalaryPassword', 'saveSalaryTier', 'deleteSalaryTier',
             'addEmployeeToTier', 'removeEmployeeFromTier',
+            'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
+            'importLatestData', 'toggleAutoImport',
         ]);
 
         const guardedMethods = [
