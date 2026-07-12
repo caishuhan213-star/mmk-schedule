@@ -8,6 +8,7 @@
     const ADMIN_EMAILS = [
         'caishuhan213@gmail.com',
         'daxiongyang31@gmail.com',
+        '15989274570@163.com',
     ];
 
     const STAFF_EMAILS = [

@@ -10,6 +10,7 @@ service cloud.firestore {
         && request.auth.token.email in [
           'caishuhan213@gmail.com',
           'daxiongyang31@gmail.com',
+          '15989274570@163.com',
         ];
     }
 
