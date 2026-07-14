@@ -3420,6 +3420,7 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         document.getElementById('totalCommission').textContent = `¥${totalCommission.toLocaleString()}`;
         document.getElementById('employeeCount').textContent = uniqueEmployees;
         document.getElementById('totalAttendanceFee').textContent = `¥${totalAttendanceFee.toLocaleString()}`;
+        document.getElementById('totalReportRebate').textContent = `¥${totalReportRebate.toLocaleString()}`;
         document.getElementById('totalInterviewFee').textContent = `¥${totalInterviewFee.toLocaleString()}`;
         document.getElementById('totalOperatingCost').textContent = `¥${totalOperatingCost.toLocaleString()}`;
         
