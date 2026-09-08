@@ -9,11 +9,11 @@
         'caishuhan213@gmail.com',
         'daxiongyang31@gmail.com',
         '15989274570@163.com',
+        '751496696@qq.com',
     ];
 
     const STAFF_EMAILS = [
         'vincent.c0540@gmail.com',
-        '751496696@qq.com',
         '3103634039@qq.com',
     ];
 
