@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=14">
-    <link rel="stylesheet" href="employee-directory.css?v=3">
+    <link rel="stylesheet" href="employee-directory.css?v=4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -439,6 +439,12 @@
                     </div>
                     <form id="employeeSearchForm" class="employee-directory-filters" role="search" autocomplete="off">
                         <input id="employeeSearch" name="employeeDirectoryQuery" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜索员工姓名或电话" aria-label="搜索员工姓名或电话">
+                        <label class="employee-referrer-filter" for="employeeReferrerFilter">
+                            <span>推荐人</span>
+                            <select id="employeeReferrerFilter" autocomplete="off">
+                                <option value="">全部推荐人</option>
+                            </select>
+                        </label>
                         <span class="employee-price-hint">价格单位：元 · 修改后点击该员工的“保存价格”</span>
                     </form>
                     <div class="employee-directory" id="employeeList">
@@ -1702,7 +1708,7 @@
                 <span class="close" onclick="scheduleManager.closeEmployeeModal()">&times;</span>
             </div>
             <form id="employeeForm" class="form">
-                <p class="employee-form-hint">姓名与价格表在所有店铺同步；联系方式、头像和备注保留在当前店铺。新员工的价格可直接在列表中填写。</p>
+                <p class="employee-form-hint">姓名、推荐人与价格表在所有店铺同步；联系方式、头像和备注保留在当前店铺。新员工的价格可直接在列表中填写。</p>
                 <div class="form-group">
                     <label for="employeeNameInput">员工姓名</label>
                     <input type="text" id="employeeNameInput" required>
@@ -1716,6 +1722,13 @@
                 <div class="form-group">
                     <label for="employeeHireDate">入职时间</label>
                     <input type="date" id="employeeHireDate" placeholder="请选择入职时间">
+                </div>
+                <div class="form-group">
+                    <label for="employeeReferrer">推荐人</label>
+                    <input type="text" id="employeeReferrer" list="employeeReferrerOptions" autocomplete="off" maxlength="40" placeholder="选择或输入推荐人，留空为未设置" aria-describedby="employeeReferrerHelp">
+                    <datalist id="employeeReferrerOptions"></datalist>
+                    <div id="employeeReferrerPresets" class="employee-referrer-presets" role="group" aria-label="预设推荐人"></div>
+                    <small id="employeeReferrerHelp" class="employee-referrer-help">可点选下方标签，也可直接输入其他推荐人。</small>
                 </div>
                 
                 <div class="form-group">
@@ -1886,10 +1899,10 @@
         });
     </script>
     <script src="firebase-manager.js?v=6"></script>
-    <script src="employee-roster.js?v=1"></script>
+    <script src="employee-roster.js?v=2"></script>
     <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=37"></script>
+    <script src="script-clean.js?v=38"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

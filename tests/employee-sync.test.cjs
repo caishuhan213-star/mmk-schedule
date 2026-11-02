@@ -181,6 +181,9 @@ test('Firestore transaction rejects a stale roster and writes no partial profile
     const options = { expectedRows: prices(), profile: { id: 'p', name: '小林' }, storeId: 'a' };
     await assert.rejects(manager.saveJlPriceTable([], options), /其他设备更新/);
     assert.equal(writes.length, 0);
+    serverRows = original.map(row => ({ ...row, referrer: '点点' }));
+    await assert.rejects(manager.saveJlPriceTable(prices(), options), /其他设备更新/);
+    assert.equal(writes.length, 0);
     serverRows = original;
     await manager.saveJlPriceTable(prices(), options);
     assert.equal(writes.length, 2); assert.equal(writes[1][0], 'employees/p');
@@ -287,4 +290,83 @@ test('returning an inline price to its original value discards the pending edit'
     manager._setEmployeePriceDraft(id, 'S', '130', 100);
     manager._setEmployeePriceDraft(id, 'S', '100', 100);
     assert.equal(manager._employeePriceDrafts.size, 0);
+});
+
+test('referrer presets do not assign existing employees and custom labels remain available', () => {
+    assert.deepEqual(roster.referrerOptions(original), ['元元', '杨总', '加加', '点点']);
+    assert.ok(roster.roster(original).every(person => person.referrer === ''));
+    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? ' 其他推荐人 ' : '元元' })));
+    assert.deepEqual(roster.referrerOptions(tagged), ['元元', '杨总', '加加', '点点', '其他推荐人']);
+    assert.equal(roster.reconcile(tagged, [{ id: 'p', name: '小林', referrer: '旧标签', phone: '123' }])[0].referrer, '其他推荐人');
+    assert.equal(roster.reconcile(tagged, [])[0].referrer, '其他推荐人');
+});
+
+test('referrers survive price-only imports, renames and added grades; explicit clearing is preserved', () => {
+    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? '元元' : '杨总' })));
+    const imported = roster.normalize(original.map(row => ({ ...row, price: 150 })), tagged);
+    const renamed = roster.rename(imported, imported[0].employeeId, '林林');
+    const extended = roster.normalize([...renamed, ...roster.roster(renamed).map(person => ({ ...person, grade: 'SSS', price: null }))]);
+    assert.ok(extended.filter(row => row.name === '林林').every(row => row.referrer === '元元'));
+    const cleared = roster.normalize(extended.map(row => row.employeeId === imported[0].employeeId ? { ...row, referrer: '' } : row), extended);
+    assert.ok(cleared.filter(row => row.name === '林林').every(row => row.referrer === ''));
+    assert.ok(cleared.filter(row => row.name === '小夏').every(row => row.referrer === '杨总'));
+});
+
+test('referrer filtering combines with name or phone search, keeps newest-first order and supports unassigned', () => {
+    const { manager } = app();
+    const rows = [...original, { name: '新人', grade: 'S', price: null }, { name: '未标记', grade: 'S', price: null }];
+    manager._employeeProfiles = [{ id: 'p', name: '小林', phone: '13812345678' }];
+    manager._jlApplyPriceTableRows(rows.map(row => ({ ...row, referrer: ['小林', '新人'].includes(row.name) ? '元元' : '' })));
+    const before = copy(manager.employees);
+    manager._employeeReferrerFilter = 'name:元元';
+    assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['新人', '小林']);
+    manager._employeeSearchQuery = '138';
+    assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['小林']);
+    manager._employeeSearchQuery = '小夏';
+    assert.equal(manager._employeeDirectoryMatches().length, 0);
+    manager._employeeSearchQuery = ''; manager._employeeReferrerFilter = 'unset';
+    assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['未标记', '小夏']);
+    manager._employeeReferrerFilter = '';
+    assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['未标记', '新人', '小夏', '小林']);
+    assert.deepEqual(manager.employees, before);
+});
+
+function employeeFields(fields, referrer) {
+    Object.assign(fields, { employeeNameInput: { value: '小林' }, employeePhone: { value: '' }, employeeHireDate: { value: '' }, employeeNotes: { value: '' }, employeeReferrer: { value: referrer } });
+}
+
+test('saving a referrer updates every grade and every store without changing prices or roster order', async () => {
+    const { manager, fields } = app();
+    const id = manager.employees[0].id;
+    manager.editingEmployeeId = id; manager._editingEmployeeReferrer = '';
+    employeeFields(fields, '元元');
+    let write;
+    manager.dbManager.saveJlPriceTable = async rows => { write = copy(rows); };
+    await manager.saveEmployee();
+    assert.deepEqual(write.map(row => row.price), original.map(row => row.price));
+    assert.deepEqual(write.map(row => row.name), original.map(row => row.name));
+    assert.ok(write.filter(row => row.name === '小林').every(row => row.referrer === '元元'));
+    assert.equal(roster.reconcile(write, [{ id: 'other', name: '小林', phone: '13900000000', referrer: '过期标签' }])[0].referrer, '元元');
+    fields.employeeReferrer.value = ''; manager._editingEmployeeReferrer = '元元';
+    await manager.saveEmployee();
+    assert.equal(manager.employees[0].referrer, '');
+});
+
+test('failed referral saves retain the previous tag and newer remote referrals cannot be overwritten by a stale form', async () => {
+    const { manager, fields, alerts } = app();
+    manager.editingEmployeeId = manager.employees[0].id; manager._editingEmployeeReferrer = '';
+    employeeFields(fields, '加加');
+    manager.dbManager.saveJlPriceTable = async () => { throw new Error('offline'); };
+    await manager.saveEmployee();
+    assert.equal(manager.employees[0].referrer, '');
+    assert.equal(fields.employeeReferrer.value, '加加');
+    manager._jlApplyPriceTableRows(original.map(row => ({ ...row, referrer: '点点' })));
+    let writes = 0;
+    manager.dbManager.saveJlPriceTable = async () => { writes++; };
+    await manager.saveEmployee();
+    assert.equal(writes, 0); assert.match(alerts.at(-1), /推荐人已在其他设备更新/);
+    // Editing an unrelated field leaves the new remote referral in place.
+    fields.employeeReferrer.value = ''; fields.employeeNotes.value = '新备注';
+    await manager.saveEmployee();
+    assert.equal(writes, 1); assert.equal(manager.employees[0].referrer, '点点');
 });

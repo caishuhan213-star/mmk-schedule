@@ -4252,6 +4252,11 @@ ${photoStatus}`;
         this.resetEmployeeSearch();
         input.addEventListener('input', () => this.updateEmployeeSearch(input));
         input.addEventListener('search', () => this.updateEmployeeSearch(input));
+        document.getElementById('employeeReferrerFilter')?.addEventListener('change', event => {
+            this._employeeReferrerFilter = event.target.value;
+            this.renderEmployeeList();
+        });
+        document.getElementById('employeeReferrer')?.addEventListener('input', () => this._updateEmployeeReferrerPresets());
         input.addEventListener('animationstart', event => {
             if (event.animationName === 'employee-search-autofill') this.resetEmployeeSearch();
         });
@@ -4276,6 +4281,59 @@ ${photoStatus}`;
         this.renderEmployeeList();
     }
 
+    _employeeDirectoryMatches() {
+        const query = (this._employeeSearchQuery || '').trim().toLowerCase();
+        const referral = this._employeeReferrerFilter || '';
+        // Filter a copy before reversing; edits never alter shared entry order.
+        return this.employees.filter(employee =>
+            `${employee.name} ${employee.phone || ''}`.toLowerCase().includes(query)
+            && (!referral || (referral === 'unset' ? !employee.referrer : `name:${employee.referrer}` === referral))
+        ).reverse();
+    }
+
+    _renderEmployeeReferrerFilter() {
+        const select = document.getElementById('employeeReferrerFilter');
+        if (!select) return;
+        const selected = this._employeeReferrerFilter || '';
+        const names = EmployeeRoster.referrerOptions(this.jlLoadPriceTable());
+        // Keep a selected custom label available even if its last employee is edited.
+        if (selected.startsWith('name:') && !names.includes(selected.slice(5))) names.push(selected.slice(5));
+        const options = [['', '全部推荐人'], ['unset', '未设置'], ...names.map(name => [`name:${name}`, name])];
+        select.replaceChildren(...options.map(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value; option.textContent = label; return option;
+        }));
+        select.value = selected;
+    }
+
+    _prepareEmployeeReferrerEditor(value = '') {
+        const input = document.getElementById('employeeReferrer');
+        if (!input) return;
+        input.value = value;
+        this._editingEmployeeReferrer = value;
+        const choices = document.getElementById('employeeReferrerOptions');
+        choices?.replaceChildren(...EmployeeRoster.referrerOptions(this.jlLoadPriceTable()).map(name => {
+            const option = document.createElement('option'); option.value = name; return option;
+        }));
+        const presets = document.getElementById('employeeReferrerPresets');
+        presets?.replaceChildren(...EmployeeRoster.defaultReferrers.map(name => {
+            const button = document.createElement('button');
+            button.type = 'button'; button.className = 'employee-referrer-preset'; button.textContent = name;
+            button.addEventListener('click', () => {
+                input.value = name; this._updateEmployeeReferrerPresets();
+            });
+            return button;
+        }));
+        this._updateEmployeeReferrerPresets();
+    }
+
+    _updateEmployeeReferrerPresets() {
+        const value = document.getElementById('employeeReferrer')?.value.trim() || '';
+        document.querySelectorAll('#employeeReferrerPresets button').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.textContent === value));
+        });
+    }
+
     // 渲染员工列表
     renderEmployeeList() {
         const search = document.getElementById('employeeSearch');
@@ -4283,6 +4341,7 @@ ${photoStatus}`;
         const focused = document.activeElement;
         const focusKey = focused?.classList?.contains('employee-price-input')
             ? { employeeId: focused.dataset.employeeId, grade: focused.dataset.grade } : null;
+        this._renderEmployeeReferrerFilter();
         this._renderEmployeeDirectory();
         if (focusKey) {
             Array.from(document.querySelectorAll('#employeeList .employee-price-input'))
@@ -4290,7 +4349,8 @@ ${photoStatus}`;
                 ?.focus({ preventScroll: true });
         }
         const count = document.getElementById('employeeRosterCount');
-        if (count) count.textContent = `${this.employees.length} 位员工`;
+        if (count) count.textContent = this._employeeSearchQuery?.trim() || this._employeeReferrerFilter
+            ? `${this._employeeDirectoryMatches().length} / ${this.employees.length} 位员工` : `${this.employees.length} 位员工`;
         const status = document.getElementById('employeeSyncStatus');
         if (status) status.textContent = this._employeeSyncError || (this._jlPriceWritePending ? '正在保存…' : this._jlPriceReady ? '名单与价格表同步 · 全店共用' : '正在连接云端名单…');
     }
@@ -4300,12 +4360,11 @@ ${photoStatus}`;
         if (!container) return;
         container.replaceChildren();
         const query = (this._employeeSearchQuery || '').trim().toLowerCase();
-        // Shared roster order follows entry order; reverse only the displayed copy.
-        const employees = this.employees.filter(employee => `${employee.name} ${employee.phone || ''}`.toLowerCase().includes(query)).reverse();
+        const employees = this._employeeDirectoryMatches();
         if (!employees.length) {
             const empty = document.createElement('p');
             empty.className = 'employee-directory-empty';
-            empty.textContent = query ? '没有找到匹配的员工' : '暂无员工，可在此添加员工或导入价格表。';
+            empty.textContent = query || this._employeeReferrerFilter ? '没有找到符合筛选条件的员工' : '暂无员工，可在此添加员工或导入价格表。';
             container.appendChild(empty);
             return;
         }
@@ -4328,6 +4387,15 @@ ${photoStatus}`;
             }
             const text = element('div', 'employee-directory-name');
             text.appendChild(element('h4', '', employee.name));
+            const referrer = element('button', employee.referrer ? 'employee-referrer-tag' : 'employee-referrer-tag unset',
+                employee.referrer ? `推荐人 · ${employee.referrer}` : '推荐人 · 未设置');
+            referrer.type = 'button';
+            referrer.setAttribute('aria-label', `编辑${employee.name}的推荐人：${employee.referrer || '未设置'}`);
+            referrer.addEventListener('click', () => {
+                this.editEmployee(employee.id);
+                if (this.editingEmployeeId === employee.id) document.getElementById('employeeReferrer')?.focus();
+            });
+            text.appendChild(referrer);
             const configured = prices.filter(r => r.employeeId === employee.rosterId && r.price !== null).length;
             text.appendChild(element('span', configured === grades.length ? 'employee-price-tag' : 'employee-price-tag pending',
                 configured === grades.length ? '价格已设置' : `${configured}/${grades.length} 个等级已设置`));
@@ -4492,6 +4560,7 @@ ${photoStatus}`;
         this.resetPhotoUpload();
         document.getElementById('employeeModalTitle').textContent = '添加员工';
         document.getElementById('employeeForm').reset();
+        this._prepareEmployeeReferrerEditor();
         document.getElementById('employeeModal').style.display = 'block';
     }
 
@@ -4508,9 +4577,16 @@ ${photoStatus}`;
         if (this.employees.some(e => e.name === name && e.id !== this.editingEmployeeId)) {
             alert('员工姓名已存在'); return;
         }
+        let referrer = document.getElementById('employeeReferrer')?.value.trim() ?? old?.referrer ?? '';
+        if (referrer.length > 40) { alert('推荐人名称请控制在 40 个字以内'); return; }
+        const referralBeforeEditing = this._editingEmployeeReferrer ?? old?.referrer ?? '';
+        if (editing && referrer === referralBeforeEditing) referrer = old.referrer || '';
+        else if (editing && (old.referrer || '') !== referralBeforeEditing) {
+            alert('该员工的推荐人已在其他设备更新，请重新打开资料后修改。'); return;
+        }
         const identity = old?.rosterId || `employee-${crypto.randomUUID()}`;
         const profile = {
-            ...(old || {}), id: old?.id || identity, rosterId: identity, name, phone,
+            ...(old || {}), id: old?.id || identity, rosterId: identity, name, phone, referrer,
             hireDate: document.getElementById('employeeHireDate').value,
             notes: document.getElementById('employeeNotes').value.trim(),
             photo: this.currentPhotoData || null,
@@ -4524,10 +4600,11 @@ ${photoStatus}`;
             rows = [...rows, ...(grades.length ? grades : ['S', 'SS', 'SSS', 'SSSS', 'SX'])
                 .map(grade => ({ name, grade, price: null, employeeId: identity, aliases: [] }))];
         }
+        rows = rows.map(row => row.employeeId === identity ? { ...row, referrer } : row);
         const saved = await this.jlSavePriceTable(rows, { profile, storeId: this.currentStoreId });
         if (saved) {
             this.closeEmployeeModal();
-            this.showSuccessMessage(editing ? '员工资料已保存，姓名已同步到所有店铺' : '员工已添加并同步，可在列表中填写价格');
+            this.showSuccessMessage(editing ? '员工资料已保存，姓名和推荐人已同步到所有店铺' : '员工已添加并同步，可在列表中填写价格');
         }
     }
 
@@ -4554,6 +4631,7 @@ ${photoStatus}`;
         document.getElementById('employeePhone').value = employee.phone || '';
         document.getElementById('employeeHireDate').value = employee.hireDate || '';
         document.getElementById('employeeNotes').value = employee.notes || '';
+        this._prepareEmployeeReferrerEditor(employee.referrer || '');
         
         // 显示现有头像
         this.displayPhoto(employee.photo);
@@ -4575,6 +4653,7 @@ ${photoStatus}`;
     closeEmployeeModal() {
         document.getElementById('employeeModal').style.display = 'none';
         this.editingEmployeeId = null;
+        this._editingEmployeeReferrer = '';
         this.currentPhotoData = null;
         document.getElementById('employeeForm').reset();
         this.resetPhotoUpload();
@@ -10362,7 +10441,7 @@ ${photoStatus}`;
     }
 
     _setEmployeeSaving(saving) {
-        document.querySelectorAll('#employeeList .employee-price-input, #employeeList button, #employeeAddGrade, #addEmployeeBtn, #employeeForm input, #employeeForm textarea, #employeeForm button[type="submit"]')
+        document.querySelectorAll('#employeeList .employee-price-input, #employeeList button, #employeeAddGrade, #addEmployeeBtn, #employeeForm input, #employeeForm textarea, #employeeReferrerPresets button, #employeeForm button[type="submit"]')
             .forEach(control => { control.disabled = saving; });
     }
 

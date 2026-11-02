@@ -3,6 +3,7 @@
 (function (root) {
     'use strict';
     const nameOf = value => String(value ?? '').trim();
+    const defaultReferrers = Object.freeze(['元元', '杨总', '加加', '点点']);
 
     function normalize(rows, previous = []) {
         const identities = new Map();
@@ -11,6 +12,15 @@
         });
         const result = new Map();
         const byName = new Map();
+        // Referral belongs to the employee, so all grade rows carry one value.
+        // Missing metadata (e.g. a price-only CSV) retains the existing referral;
+        // an explicit empty value clears it across every grade.
+        const referrers = new Map();
+        for (const row of Array.isArray(rows) ? rows : []) {
+            if (row && Object.prototype.hasOwnProperty.call(row, 'referrer')) {
+                referrers.set(nameOf(row.name), nameOf(row.referrer));
+            }
+        }
         for (const row of Array.isArray(rows) ? rows : []) {
             if (!row) continue;
             const name = nameOf(row.name);
@@ -21,7 +31,8 @@
             const employeeId = row.employeeId || old.employeeId || `price-${encodeURIComponent(name)}`;
             const aliases = [...new Set([...(old.aliases || []), ...(row.aliases || [])].map(nameOf))]
                 .filter(alias => alias && alias !== name);
-            const clean = { name, grade, price, employeeId, aliases };
+            const referrer = referrers.has(name) ? referrers.get(name) : nameOf(old.referrer);
+            const clean = { name, grade, price, employeeId, aliases, referrer };
             byName.set(name, clean);
             result.set(JSON.stringify([name, grade]), clean);
         }
@@ -31,7 +42,7 @@
     function roster(rows) {
         const names = new Map();
         normalize(rows).forEach(row => {
-            if (!names.has(row.name)) names.set(row.name, { name: row.name, employeeId: row.employeeId, aliases: row.aliases });
+            if (!names.has(row.name)) names.set(row.name, { name: row.name, employeeId: row.employeeId, aliases: row.aliases, referrer: row.referrer });
         });
         return [...names.values()];
     }
@@ -50,7 +61,7 @@
                 || profiles.find(p => eligible(p) && nameOf(p.name) === person.name)
                 || profiles.find(p => eligible(p) && person.aliases.includes(nameOf(p.name)));
             if (profile) used.add(profile);
-            return { ...(profile || {}), id: profile?.id || person.employeeId, rosterId: person.employeeId, name: person.name };
+            return { ...(profile || {}), id: profile?.id || person.employeeId, rosterId: person.employeeId, name: person.name, referrer: person.referrer };
         });
     }
 
@@ -69,7 +80,11 @@
             : row));
     }
 
-    const api = { normalize, roster, reconcile, mergeProfiles, rename };
+    function referrerOptions(rows) {
+        return [...new Set([...defaultReferrers, ...roster(rows).map(person => person.referrer).filter(Boolean)])];
+    }
+
+    const api = { normalize, roster, reconcile, mergeProfiles, rename, defaultReferrers, referrerOptions };
     root.EmployeeRoster = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
