@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=14">
-    <link rel="stylesheet" href="employee-directory.css?v=1">
+    <link rel="stylesheet" href="employee-directory.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -437,10 +437,9 @@
                             <button id="addEmployeeBtn" class="btn btn-primary">＋ 添加员工</button>
                         </div>
                     </div>
-                    <div class="employee-directory-filters">
-                        <input id="employeeSearch" type="search" placeholder="搜索员工姓名或电话" aria-label="搜索员工姓名或电话">
-                        <button id="manageEmployeesBtn" class="btn btn-secondary">展开列表</button>
-                    </div>
+                    <form id="employeeSearchForm" class="employee-directory-filters" role="search" autocomplete="off">
+                        <input id="employeeSearch" name="employeeDirectoryQuery" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜索员工姓名或电话" aria-label="搜索员工姓名或电话">
+                    </form>
                     <div class="employee-directory" id="employeeList">
                         <!-- 员工列表将通过JavaScript动态填充 -->
                     </div>
@@ -1771,26 +1770,6 @@
         </div>
     </div>
 
-    <!-- 员工列表管理模态框 -->
-    <div id="employeeListModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>员工信息管理</h2>
-                <span class="close" onclick="scheduleManager.closeEmployeeListModal()">&times;</span>
-            </div>
-            <div class="employee-management">
-                <div class="employee-list-header">
-                    <h3>员工列表</h3>
-                    <button id="addNewEmployeeBtn" class="btn btn-primary">添加新员工</button>
-                </div>
-                <input id="employeeModalSearch" type="search" placeholder="搜索员工姓名或电话" aria-label="搜索完整员工列表">
-                <div class="employee-directory" id="employeeListContainer">
-                    <!-- 员工列表将通过JavaScript动态填充 -->
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 批量导入模态框 -->
     <div id="importModal" class="modal">
         <div class="modal-content">
@@ -1931,7 +1910,7 @@
     <script src="employee-roster.js?v=1"></script>
     <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=34"></script>
+    <script src="script-clean.js?v=35"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

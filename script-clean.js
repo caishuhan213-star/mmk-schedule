@@ -660,6 +660,7 @@ class ScheduleManager {
         this._employeeProfiles = this.employees;
         this.employees = EmployeeRoster.reconcile(this.jlPriceTable, this._employeeProfiles);
         this._employeeProfilesReady = false;
+        this._employeeSearchQuery = '';
         this._jlPriceReady = false;
         this.currentSort = { field: null, direction: 'asc' };
         this.editingId = null;
@@ -933,7 +934,7 @@ class ScheduleManager {
             'addAttendanceFee', 'editAttendanceFee', 'deleteAttendanceFee', 'clearAllAttendanceFees',
             'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
             'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
-            'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
+            'openAddEmployeeModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
             'handlePhotoUpload', 'removePhoto',
             'saveSalaryTiersData', 'saveSalaryPassword',
             'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
@@ -947,7 +948,7 @@ class ScheduleManager {
             'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
             'addOperatingCost', 'editOperatingCost', 'deleteOperatingCost', 'clearAllOperatingCosts',
             'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
-            'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
+            'openAddEmployeeModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
             'handlePhotoUpload', 'removePhoto',
             'openStoreModal', 'saveStore', 'editStore', 'deleteStore',
             'saveSalaryTiersData', 'saveSalaryPassword',
@@ -2127,14 +2128,6 @@ class ScheduleManager {
 
         // 员工管理事件
         document.getElementById('addEmployeeBtn').addEventListener('click', () => {
-            this.openAddEmployeeModal();
-        });
-
-        document.getElementById('manageEmployeesBtn').addEventListener('click', () => {
-            this.openEmployeeListModal();
-        });
-
-        document.getElementById('addNewEmployeeBtn').addEventListener('click', () => {
             this.openAddEmployeeModal();
         });
 
@@ -4164,7 +4157,6 @@ ${photoStatus}`;
     _refreshEmployeeRoster() {
         this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles || []);
         this.renderEmployeeList();
-        this.renderEmployeeListModal();
         this.updateEmployeeSelectors().catch(console.error);
         this.updateAttendanceFeeSelectors();
         this.updateInterviewFeeSelectors();
@@ -4254,20 +4246,52 @@ ${photoStatus}`;
         try { localStorage.setItem(this.getStorageKey('reportRebates'), JSON.stringify(this.reportRebates)); } catch (e) {}
     }
 
+    initializeEmployeeSearch() {
+        const input = document.getElementById('employeeSearch');
+        if (!input) return;
+        this.resetEmployeeSearch();
+        input.addEventListener('input', () => this.updateEmployeeSearch(input));
+        input.addEventListener('search', () => this.updateEmployeeSearch(input));
+        input.addEventListener('animationstart', event => {
+            if (event.animationName === 'employee-search-autofill') this.resetEmployeeSearch();
+        });
+        document.getElementById('employeeSearchForm')?.addEventListener('submit', event => event.preventDefault());
+        window.addEventListener('pageshow', () => this.resetEmployeeSearch());
+    }
+
+    updateEmployeeSearch(input) {
+        // Ignore credential autofill while retaining normal typing, paste and clear.
+        const autofilled = [':autofill', ':-webkit-autofill'].some(selector => {
+            try { return input.matches(selector); } catch { return false; }
+        });
+        if (autofilled) { this.resetEmployeeSearch(); return; }
+        this._employeeSearchQuery = input.value;
+        this.renderEmployeeList();
+    }
+
+    resetEmployeeSearch() {
+        this._employeeSearchQuery = '';
+        const input = document.getElementById('employeeSearch');
+        if (input) input.value = '';
+        this.renderEmployeeList();
+    }
+
     // 渲染员工列表
     renderEmployeeList() {
-        this._renderEmployeeDirectory('employeeList', 'employeeSearch');
+        const search = document.getElementById('employeeSearch');
+        if (search && search.value !== (this._employeeSearchQuery || '')) search.value = this._employeeSearchQuery || '';
+        this._renderEmployeeDirectory();
         const count = document.getElementById('employeeRosterCount');
         if (count) count.textContent = `${this.employees.length} 位员工`;
         const status = document.getElementById('employeeSyncStatus');
         if (status) status.textContent = this._employeeSyncError || (this._jlPriceWritePending ? '正在保存…' : this._jlPriceReady ? '名单与价格表同步 · 全店共用' : '正在连接云端名单…');
     }
 
-    _renderEmployeeDirectory(containerId, searchId) {
-        const container = document.getElementById(containerId);
+    _renderEmployeeDirectory() {
+        const container = document.getElementById('employeeList');
         if (!container) return;
         container.replaceChildren();
-        const query = (document.getElementById(searchId)?.value || '').trim().toLowerCase();
+        const query = (this._employeeSearchQuery || '').trim().toLowerCase();
         const employees = this.employees.filter(employee => `${employee.name} ${employee.phone || ''}`.toLowerCase().includes(query));
         if (!employees.length) {
             const empty = document.createElement('p');
@@ -4367,17 +4391,6 @@ ${photoStatus}`;
         document.getElementById('employeeModal').style.display = 'block';
     }
 
-    // 打开员工管理列表模态框
-    openEmployeeListModal() {
-        this.renderEmployeeListModal();
-        document.getElementById('employeeListModal').style.display = 'block';
-    }
-
-    // 渲染员工管理列表模态框
-    renderEmployeeListModal() {
-        this._renderEmployeeDirectory('employeeListContainer', 'employeeModalSearch');
-    }
-
     // 保存员工
     async saveEmployee() {
         if (!this._requireEmployeeSyncReady()) return;
@@ -4461,11 +4474,6 @@ ${photoStatus}`;
         this.currentPhotoData = null;
         document.getElementById('employeeForm').reset();
         this.resetPhotoUpload();
-    }
-
-    // 关闭员工列表模态框
-    closeEmployeeListModal() {
-        document.getElementById('employeeListModal').style.display = 'none';
     }
 
     // 处理图片上传
@@ -7733,7 +7741,7 @@ ${photoStatus}`;
 
         // 如果切换到管理页面，刷新员工列表
         if (tabName === 'management') {
-            this.renderEmployeeList();
+            this.resetEmployeeSearch();
         }
 
         // 如果切换到图表页面，初始化/更新图表
@@ -10311,8 +10319,7 @@ ${photoStatus}`;
 
     // --- 初始化事件绑定 ---
     jlInit() {
-        document.getElementById('employeeSearch')?.addEventListener('input', () => this.renderEmployeeList());
-        document.getElementById('employeeModalSearch')?.addEventListener('input', () => this.renderEmployeeListModal());
+        this.initializeEmployeeSearch();
         document.getElementById('employeePriceShortcut')?.addEventListener('click', () => this.jlOpenPriceModal());
         document.getElementById('jlImportCsv')?.addEventListener('click', () => this.jlImportCsv());
         document.getElementById('jlManagePrice')?.addEventListener('click', () => this.jlOpenPriceModal());

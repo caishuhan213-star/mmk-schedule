@@ -7,9 +7,12 @@
 .employee-directory-toolbar, .employee-directory-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .employee-directory-toolbar .btn { white-space: nowrap; }
 .employee-directory-filters { justify-content: space-between; padding-bottom: 16px; }
-#employeeSearch, #employeeModalSearch { width: min(100%, 320px); padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); font: inherit; }
-#employeeModalSearch { margin-bottom: 16px; }
-.employee-directory { max-height: 540px; overflow-y: auto; scrollbar-gutter: stable; }
+#employeeSearch { width: min(100%, 320px); padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); font: inherit; }
+/* Browsers can autofill after page load without emitting an input event. */
+@keyframes employee-search-autofill { from { opacity: 0.99; } to { opacity: 1; } }
+#employeeSearch:autofill { animation: employee-search-autofill 0.01s; }
+#employeeSearch:-webkit-autofill { animation: employee-search-autofill 0.01s; }
+.employee-directory { max-height: none; overflow: visible; }
 .employee-directory-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(240px, 1.25fr) minmax(120px, 1fr) auto; align-items: center; gap: 20px; padding: 16px 12px; border-top: 1px solid var(--color-border); }
 .employee-directory-row:hover { background: var(--color-surface-alt); }
 .employee-directory-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -27,7 +30,6 @@
 .employee-directory-actions .btn { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
 .employee-remove-btn { color: var(--color-danger, #c43e3e); background: transparent; border: 1px solid var(--color-border); }
 .employee-directory-empty { padding: 44px 12px; text-align: center; font-size: 14px; color: var(--color-text-muted); }
-#employeeListModal .modal-content { width: min(1100px, 94vw); max-width: 1100px; }
 #employeeModal .modal-content { width: min(640px, 94vw); max-width: 640px; }
 #employeeForm { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 #employeeForm .form-group { margin: 0; min-width: 0; }
@@ -57,5 +59,4 @@
     .employee-directory-actions .btn { padding: 8px; }
     #employeeForm { grid-template-columns: 1fr; }
     #employeeForm > * { grid-column: 1; }
-    #employeeListModal .employee-management { padding: 12px; }
 }

@@ -18,7 +18,7 @@ function app() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../script-clean.js'), 'utf8') + '\nglobalThis.Manager = ScheduleManager;', context);
     const manager = Object.create(context.Manager.prototype);
     Object.assign(manager, { jlPriceTable: prices(), _employeeProfiles: [], employees: [], currentStoreId: 'a', dataKeyPrefix: 'store_a_', _jlPriceReady: true, _employeeProfilesReady: true, dbManager: {} });
-    for (const method of ['renderEmployeeList', 'renderEmployeeListModal', 'updateAttendanceFeeSelectors', 'updateInterviewFeeSelectors', 'jlRefreshPriceStatus', 'jlRenderPriceTable', 'closeEmployeeModal', 'showSuccessMessage']) manager[method] = () => {};
+    for (const method of ['renderEmployeeList', 'updateAttendanceFeeSelectors', 'updateInterviewFeeSelectors', 'jlRefreshPriceStatus', 'jlRenderPriceTable', 'closeEmployeeModal', 'showSuccessMessage']) manager[method] = () => {};
     manager.updateEmployeeSelectors = async () => {};
     manager.canModifyData = () => true;
     manager._refreshEmployeeRoster();
@@ -185,4 +185,37 @@ test('Firestore transaction rejects a stale roster and writes no partial profile
     serverRows = original;
     await manager.saveJlPriceTable(prices(), options);
     assert.equal(writes.length, 2); assert.equal(writes[1][0], 'employees/p');
+});
+
+test('restored browser values and delayed credential autofill cannot become the default employee filter', () => {
+    const { manager, fields, context } = app();
+    const inputEvents = {}, pageEvents = {};
+    const input = { value: 'saved-account@example.invalid', matches: () => true,
+        addEventListener: (name, handler) => { inputEvents[name] = handler; } };
+    fields.employeeSearch = input;
+    context.window.addEventListener = (name, handler) => { pageEvents[name] = handler; };
+    manager.initializeEmployeeSearch();
+    assert.equal(input.value, ''); assert.equal(manager._employeeSearchQuery, '');
+    input.value = 'saved-account@example.invalid'; inputEvents.input();
+    assert.equal(input.value, ''); assert.equal(manager._employeeSearchQuery, '');
+    input.value = 'silent-autofill@example.invalid';
+    inputEvents.animationstart({ animationName: 'employee-search-autofill' });
+    assert.equal(input.value, '');
+    input.value = 'restored-query'; manager._employeeSearchQuery = 'restored-query'; pageEvents.pageshow();
+    assert.equal(input.value, ''); assert.equal(manager._employeeSearchQuery, '');
+});
+
+test('intentional employee searches survive cloud updates and can be cleared normally', () => {
+    const { manager, fields } = app();
+    const input = { value: '小林', matches: () => false };
+    fields.employeeSearch = input;
+    manager.updateEmployeeSearch(input);
+    manager._jlApplyPriceTableRows(original);
+    assert.equal(manager._employeeSearchQuery, '小林');
+    input.value = '138'; manager.updateEmployeeSearch(input);
+    assert.equal(manager._employeeSearchQuery, '138');
+    input.value = ''; manager.updateEmployeeSearch(input);
+    assert.equal(manager._employeeSearchQuery, '');
+    input.value = '小夏'; manager.updateEmployeeSearch(input); manager.resetEmployeeSearch();
+    assert.equal(input.value, ''); assert.equal(manager._employeeSearchQuery, '');
 });
