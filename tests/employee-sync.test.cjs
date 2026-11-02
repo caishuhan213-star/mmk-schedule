@@ -381,3 +381,90 @@ test('failed referral saves retain the previous tag and newer remote referrals c
     await manager.saveEmployee();
     assert.equal(writes, 1); assert.equal(manager.employees[0].referrer, '点点');
 });
+
+test('quota errors keep the referral draft, remain visible after a server snapshot and clear after a successful retry', async () => {
+    const { manager, fields, cache, context, alerts } = app();
+    const badges = [];
+    context.window.firebaseManager = { setEmployeeSaveError: message => badges.push(message) };
+    fields.employeeFormError = { hidden: true, textContent: '' };
+    employeeFields(fields, '嘉嘉');
+    manager.editingEmployeeId = manager.employees[0].id;
+    manager._editingEmployeeReferrer = '';
+    let closeCount = 0;
+    manager.closeEmployeeModal = () => { closeCount++; };
+    manager.dbManager.saveJlPriceTable = async () => { throw Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' }); };
+    const before = copy(manager.jlPriceTable);
+    await manager.saveEmployee();
+    assert.match(fields.employeeFormError.textContent, /额度受限/);
+    assert.match(fields.employeeFormError.textContent, /尚未保存/);
+    assert.equal(fields.employeeFormError.hidden, false);
+    assert.equal(fields.employeeReferrer.value, '嘉嘉');
+    assert.equal(closeCount, 0); assert.equal(alerts.length, 0);
+    assert.equal(manager._jlPriceWritePending, false);
+    assert.equal(cache.has('store_a_employees'), false);
+    assert.deepEqual(manager.jlPriceTable, before);
+    let snapshot;
+    manager.dbManager.subscribeToJlPriceTable = callback => { snapshot = callback; };
+    manager.jlInitPriceTableSync(); snapshot(before, { exists: true, fromCache: false });
+    assert.match(manager._employeeSaveError, /尚未保存/);
+    assert.equal(manager.employees[0].referrer, '');
+    manager.dbManager.saveJlPriceTable = async () => {};
+    await manager.saveEmployee();
+    assert.equal(manager.employees[0].referrer, '嘉嘉');
+    assert.equal(manager._employeeSaveError, '');
+    assert.equal(fields.employeeFormError.hidden, true); assert.equal(closeCount, 1);
+    assert.deepEqual(badges, ['云端额度受限', '']);
+});
+
+test('permission failures are distinguished from quota failures', async () => {
+    const { manager, alerts } = app();
+    manager.dbManager.saveJlPriceTable = async () => { throw Object.assign(new Error('Missing permissions.'), { code: 'permission-denied' }); };
+    assert.equal(await manager.jlSavePriceTable(prices()), false);
+    assert.match(alerts[0], /没有云端写入权限/);
+    assert.doesNotMatch(alerts[0], /额度/);
+});
+
+test('background connection updates cannot replace a failed save badge with ready', () => {
+    const status = { style: {} };
+    const context = vm.createContext({ console, document: { getElementById: () => status } });
+    const source = fs.readFileSync(path.join(__dirname, '../firebase-manager.js'), 'utf8')
+        .replace('window.firebaseManager = new FirebaseManager();', 'globalThis.Manager = FirebaseManager;');
+    vm.runInContext(source, context);
+    const manager = Object.create(context.Manager.prototype);
+    manager.syncStatus = 'ready';
+    manager.setEmployeeSaveError('云端额度受限');
+    manager.showSyncStatus();
+    assert.match(status.innerHTML, /云端额度受限/);
+    manager.setEmployeeSaveError('');
+    assert.match(status.innerHTML, /已就绪/);
+});
+
+test('the real path builders target shared prices and the selected store profile; quota read failure writes nothing', async () => {
+    const context = vm.createContext({ console, EmployeeRoster: roster });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../firebase-data-manager.js'), 'utf8') + '\nglobalThis.DataManager = FirebaseDataManager;', context);
+    const manager = Object.create(context.DataManager.prototype);
+    Object.assign(manager, { teamId: 'shared', _currentUser: { uid: 'test-only' }, _readOnly: false });
+    const reads = [], writes = [];
+    let rejectRead = true;
+    const transaction = {
+        get: async ref => {
+            reads.push(ref.path);
+            if (rejectRead) throw Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' });
+            return { exists: true, data: () => ({ rows: original }) };
+        },
+        set: (ref, data) => writes.push({ path: ref.path, data })
+    };
+    manager._getFirestore = () => ({
+        collection: path => ({ doc: id => ({ path: `${path}/${id}` }) }),
+        runTransaction: callback => callback(transaction)
+    });
+    const options = { expectedRows: prices(), profile: { id: 'employee-test', referrer: '嘉嘉' }, storeId: 'test-store' };
+    await assert.rejects(manager.saveJlPriceTable(prices(), options), { code: 'resource-exhausted' });
+    assert.deepEqual(reads, ['team/shared/settings/jlPriceTable']);
+    assert.equal(writes.length, 0);
+    rejectRead = false;
+    await manager.saveJlPriceTable(prices(), options);
+    assert.deepEqual(writes.map(write => write.path), [
+        'team/shared/settings/jlPriceTable', 'team/shared/stores/test-store/employees/employee-test'
+    ]);
+});

@@ -4352,7 +4352,10 @@ ${photoStatus}`;
         if (count) count.textContent = this._employeeSearchQuery?.trim() || this._employeeReferrerFilter
             ? `${this._employeeDirectoryMatches().length} / ${this.employees.length} 位员工` : `${this.employees.length} 位员工`;
         const status = document.getElementById('employeeSyncStatus');
-        if (status) status.textContent = this._employeeSyncError || (this._jlPriceWritePending ? '正在保存…' : this._jlPriceReady ? '名单与价格表同步 · 全店共用' : '正在连接云端名单…');
+        if (status) {
+            status.textContent = this._employeeSaveError || this._employeeSyncError || (this._jlPriceWritePending ? '正在保存…' : this._jlPriceReady ? '名单与价格表同步 · 全店共用' : '正在连接云端名单…');
+            status.dataset.saveFailed = String(!!this._employeeSaveError);
+        }
     }
 
     _renderEmployeeDirectory() {
@@ -4552,6 +4555,7 @@ ${photoStatus}`;
     // 打开添加员工模态框
     openAddEmployeeModal() {
         if (!this._requireEmployeeSyncReady()) return;
+        this._setEmployeeFormError('');
         this.editingEmployeeId = null;
         this.currentPhotoData = null;
         this.resetPhotoUpload();
@@ -4621,6 +4625,7 @@ ${photoStatus}`;
         }
 
         this.editingEmployeeId = id;
+        this._setEmployeeFormError('');
         this.currentPhotoData = employee.photo || null;
         
         document.getElementById('employeeModalTitle').textContent = '编辑员工';
@@ -4648,6 +4653,7 @@ ${photoStatus}`;
 
     // 关闭员工模态框
     closeEmployeeModal() {
+        this._setEmployeeFormError('');
         document.getElementById('employeeModal').style.display = 'none';
         this.editingEmployeeId = null;
         this._editingEmployeeReferrer = '';
@@ -10414,7 +10420,9 @@ ${photoStatus}`;
         const expectedRows = this.jlLoadPriceTable();
         const cleanRows = this._jlNormalizePriceRows(rows);
         this._jlPriceWritePending = true;
+        this._employeeSaveError = '';
         this._employeeSyncError = '';
+        this._setEmployeeFormError('');
         this.renderEmployeeList();
         this._setEmployeeSaving(true);
         try {
@@ -10424,17 +10432,40 @@ ${photoStatus}`;
                 this._cacheEmployeeProfiles();
             }
             this._jlApplyPriceTableRows(cleanRows);
+            window.firebaseManager?.setEmployeeSaveError?.('');
             return true;
         } catch (error) {
             if (error.latestRows) this._jlApplyPriceTableRows(error.latestRows);
-            this._employeeSyncError = '保存未完成，请重试';
-            alert(`保存失败：${error.message || '请检查网络连接'}\n本次修改尚未保存。`);
+            const code = String(error.code || '').replace(/^firestore\//, '');
+            const help = {
+                'resource-exhausted': '云数据库额度受限，请等待额度恢复后重试；管理员可在 Firebase 后台查看用量。反复刷新或点击保存无法恢复额度。',
+                'permission-denied': '当前账号没有云端写入权限，请联系管理员核对数据库权限。',
+                'unauthenticated': '登录已失效，请重新登录后再保存。',
+                'unavailable': '暂时无法连接云数据库，请检查网络，连接恢复后再保存。',
+                'deadline-exceeded': '连接云数据库超时，请稍后重试。'
+            }[code] || error.message || '请检查网络连接后重试。';
+            this._employeeSaveError = `保存失败：${help} 本次修改尚未保存。`;
+            window.firebaseManager?.setEmployeeSaveError?.(code === 'resource-exhausted' ? '云端额度受限' : '员工保存失败');
+            console.error('员工/价格表云端保存失败', { code: code || 'unknown', message: error.message });
+            // Keep the draft in the open editor. A live roster snapshot is not
+            // acknowledgement of this failed write and must not hide its error.
+            const inline = options.profile && document.getElementById('employeeFormError');
+            if (inline) this._setEmployeeFormError(`${this._employeeSaveError} 表单内容仍保留在当前窗口，请勿刷新。`);
+            else alert(this._employeeSaveError);
             return false;
         } finally {
             this._jlPriceWritePending = false;
             this._setEmployeeSaving(false);
             this.renderEmployeeList();
         }
+    }
+
+    _setEmployeeFormError(message) {
+        const element = document.getElementById('employeeFormError');
+        if (!element) return;
+        element.textContent = message;
+        element.hidden = !message;
+        if (message) element.scrollIntoView?.({ block: 'nearest' });
     }
 
     _setEmployeeSaving(saving) {

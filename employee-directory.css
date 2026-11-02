@@ -52,11 +52,14 @@
 .employee-directory-actions .btn { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
 .employee-remove-btn { color: var(--color-danger, #c43e3e); background: transparent; border: 1px solid var(--color-border); }
 .employee-directory-empty { padding: 44px 12px; text-align: center; font-size: 14px; color: var(--color-text-muted); }
-#employeeModal .modal-content { width: min(640px, 94vw); max-width: 640px; }
+#employeeModal .modal-content { width: min(640px, 94vw); max-width: 640px; margin: 4vh auto; max-height: 92vh; max-height: 92dvh; overflow-y: auto; }
 #employeeForm { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 #employeeForm .form-group { margin: 0; min-width: 0; }
 #employeeForm .form-group:has(#employeeNotes), #employeeForm .form-group:has(#employeePhoto), #employeeForm .modal-actions, .employee-form-hint { grid-column: 1 / -1; }
 #employeeForm .modal-actions { display: flex; justify-content: flex-end; }
+.employee-form-error { grid-column: 1 / -1; margin: 0; padding: 12px; border: 1px solid var(--color-danger, #c43e3e); border-radius: var(--radius-md); color: var(--color-danger, #c43e3e); font-size: 13px; line-height: 1.7; }
+.employee-form-error[hidden] { display: none; }
+#employeeSyncStatus[data-save-failed="true"] { color: var(--color-danger, #c43e3e); line-height: 1.7; }
 .employee-form-hint { margin: 0; padding: 12px; background: var(--color-surface-alt); border-radius: var(--radius-md); font-size: 12px; line-height: 1.7; color: var(--color-text-secondary); }
 #employeeModal { z-index: 1100; }
 @media (max-width: 1000px) {

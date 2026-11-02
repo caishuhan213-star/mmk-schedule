@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=14">
-    <link rel="stylesheet" href="employee-directory.css?v=5">
+    <link rel="stylesheet" href="employee-directory.css?v=6">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1758,6 +1758,7 @@
                     <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeEmployeeModal()">取消</button>
                     <button type="submit" class="btn btn-primary">保存员工</button>
                 </div>
+                <p id="employeeFormError" class="employee-form-error" role="alert" hidden></p>
             </form>
         </div>
     </div>
@@ -1898,11 +1899,11 @@
             }, 2000);
         });
     </script>
-    <script src="firebase-manager.js?v=6"></script>
+    <script src="firebase-manager.js?v=7"></script>
     <script src="employee-roster.js?v=3"></script>
     <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=39"></script>
+    <script src="script-clean.js?v=40"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

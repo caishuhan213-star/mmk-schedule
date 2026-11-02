@@ -387,7 +387,16 @@ class FirebaseManager {
     }
     
     // 显示同步状态
+    setEmployeeSaveError(message = '') {
+        this.employeeSaveError = message;
+        this.showSyncStatus();
+    }
+
     showSyncStatus() {
+        if (this.employeeSaveError) {
+            this.showErrorStatus(this.employeeSaveError);
+            return;
+        }
         const statusElement = document.getElementById('syncStatus');
         if (!statusElement) return;
         
