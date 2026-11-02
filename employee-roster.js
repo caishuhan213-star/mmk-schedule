@@ -3,7 +3,14 @@
 (function (root) {
     'use strict';
     const nameOf = value => String(value ?? '').trim();
-    const defaultReferrers = Object.freeze(['元元', '杨总', '加加', '点点']);
+    const defaultReferrers = Object.freeze(['圆圆', '杨总', '嘉嘉', '点点']);
+
+    function normalizeReferrer(value) {
+        const name = nameOf(value);
+        if (name === '元元') return '圆圆';
+        if (name === '加加') return '嘉嘉';
+        return name;
+    }
 
     function normalize(rows, previous = []) {
         const identities = new Map();
@@ -18,7 +25,7 @@
         const referrers = new Map();
         for (const row of Array.isArray(rows) ? rows : []) {
             if (row && Object.prototype.hasOwnProperty.call(row, 'referrer')) {
-                referrers.set(nameOf(row.name), nameOf(row.referrer));
+                referrers.set(nameOf(row.name), normalizeReferrer(row.referrer));
             }
         }
         for (const row of Array.isArray(rows) ? rows : []) {
@@ -31,7 +38,7 @@
             const employeeId = row.employeeId || old.employeeId || `price-${encodeURIComponent(name)}`;
             const aliases = [...new Set([...(old.aliases || []), ...(row.aliases || [])].map(nameOf))]
                 .filter(alias => alias && alias !== name);
-            const referrer = referrers.has(name) ? referrers.get(name) : nameOf(old.referrer);
+            const referrer = referrers.has(name) ? referrers.get(name) : normalizeReferrer(old.referrer);
             const clean = { name, grade, price, employeeId, aliases, referrer };
             byName.set(name, clean);
             result.set(JSON.stringify([name, grade]), clean);
@@ -84,7 +91,7 @@
         return [...new Set([...defaultReferrers, ...roster(rows).map(person => person.referrer).filter(Boolean)])];
     }
 
-    const api = { normalize, roster, reconcile, mergeProfiles, rename, defaultReferrers, referrerOptions };
+    const api = { normalize, roster, reconcile, mergeProfiles, rename, defaultReferrers, referrerOptions, normalizeReferrer };
     root.EmployeeRoster = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -293,20 +293,31 @@ test('returning an inline price to its original value discards the pending edit'
 });
 
 test('referrer presets do not assign existing employees and custom labels remain available', () => {
-    assert.deepEqual(roster.referrerOptions(original), ['元元', '杨总', '加加', '点点']);
+    assert.deepEqual(roster.referrerOptions(original), ['圆圆', '杨总', '嘉嘉', '点点']);
     assert.ok(roster.roster(original).every(person => person.referrer === ''));
-    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? ' 其他推荐人 ' : '元元' })));
-    assert.deepEqual(roster.referrerOptions(tagged), ['元元', '杨总', '加加', '点点', '其他推荐人']);
+    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? ' 其他推荐人 ' : '圆圆' })));
+    assert.deepEqual(roster.referrerOptions(tagged), ['圆圆', '杨总', '嘉嘉', '点点', '其他推荐人']);
     assert.equal(roster.reconcile(tagged, [{ id: 'p', name: '小林', referrer: '旧标签', phone: '123' }])[0].referrer, '其他推荐人');
     assert.equal(roster.reconcile(tagged, [])[0].referrer, '其他推荐人');
 });
 
+test('corrected referrer names also normalize saved tags without changing employee identities or prices', () => {
+    const legacy = prices().map(row => ({ ...row, referrer: row.name === '小林' ? ' 元元 ' : '加加' }));
+    const corrected = roster.normalize(legacy);
+    assert.deepEqual(corrected.map(row => row.referrer), ['圆圆', '圆圆', '嘉嘉']);
+    assert.deepEqual(corrected.map(row => [row.employeeId, row.name, row.grade, row.price]), legacy.map(row => [row.employeeId, row.name, row.grade, row.price]));
+    assert.deepEqual(roster.referrerOptions(legacy), ['圆圆', '杨总', '嘉嘉', '点点']);
+    assert.deepEqual(roster.normalize(original, legacy).map(row => row.referrer), ['圆圆', '圆圆', '嘉嘉']);
+    assert.equal(roster.normalizeReferrer(' 其他推荐人 '), '其他推荐人');
+    assert.equal(roster.normalizeReferrer(''), '');
+});
+
 test('referrers survive price-only imports, renames and added grades; explicit clearing is preserved', () => {
-    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? '元元' : '杨总' })));
+    const tagged = roster.normalize(original.map(row => ({ ...row, referrer: row.name === '小林' ? '圆圆' : '杨总' })));
     const imported = roster.normalize(original.map(row => ({ ...row, price: 150 })), tagged);
     const renamed = roster.rename(imported, imported[0].employeeId, '林林');
     const extended = roster.normalize([...renamed, ...roster.roster(renamed).map(person => ({ ...person, grade: 'SSS', price: null }))]);
-    assert.ok(extended.filter(row => row.name === '林林').every(row => row.referrer === '元元'));
+    assert.ok(extended.filter(row => row.name === '林林').every(row => row.referrer === '圆圆'));
     const cleared = roster.normalize(extended.map(row => row.employeeId === imported[0].employeeId ? { ...row, referrer: '' } : row), extended);
     assert.ok(cleared.filter(row => row.name === '林林').every(row => row.referrer === ''));
     assert.ok(cleared.filter(row => row.name === '小夏').every(row => row.referrer === '杨总'));
@@ -316,9 +327,9 @@ test('referrer filtering combines with name or phone search, keeps newest-first 
     const { manager } = app();
     const rows = [...original, { name: '新人', grade: 'S', price: null }, { name: '未标记', grade: 'S', price: null }];
     manager._employeeProfiles = [{ id: 'p', name: '小林', phone: '13812345678' }];
-    manager._jlApplyPriceTableRows(rows.map(row => ({ ...row, referrer: ['小林', '新人'].includes(row.name) ? '元元' : '' })));
+    manager._jlApplyPriceTableRows(rows.map(row => ({ ...row, referrer: ['小林', '新人'].includes(row.name) ? '圆圆' : '' })));
     const before = copy(manager.employees);
-    manager._employeeReferrerFilter = 'name:元元';
+    manager._employeeReferrerFilter = 'name:圆圆';
     assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['新人', '小林']);
     manager._employeeSearchQuery = '138';
     assert.deepEqual(manager._employeeDirectoryMatches().map(p => p.name), ['小林']);
@@ -339,15 +350,15 @@ test('saving a referrer updates every grade and every store without changing pri
     const { manager, fields } = app();
     const id = manager.employees[0].id;
     manager.editingEmployeeId = id; manager._editingEmployeeReferrer = '';
-    employeeFields(fields, '元元');
+    employeeFields(fields, '圆圆');
     let write;
     manager.dbManager.saveJlPriceTable = async rows => { write = copy(rows); };
     await manager.saveEmployee();
     assert.deepEqual(write.map(row => row.price), original.map(row => row.price));
     assert.deepEqual(write.map(row => row.name), original.map(row => row.name));
-    assert.ok(write.filter(row => row.name === '小林').every(row => row.referrer === '元元'));
-    assert.equal(roster.reconcile(write, [{ id: 'other', name: '小林', phone: '13900000000', referrer: '过期标签' }])[0].referrer, '元元');
-    fields.employeeReferrer.value = ''; manager._editingEmployeeReferrer = '元元';
+    assert.ok(write.filter(row => row.name === '小林').every(row => row.referrer === '圆圆'));
+    assert.equal(roster.reconcile(write, [{ id: 'other', name: '小林', phone: '13900000000', referrer: '过期标签' }])[0].referrer, '圆圆');
+    fields.employeeReferrer.value = ''; manager._editingEmployeeReferrer = '圆圆';
     await manager.saveEmployee();
     assert.equal(manager.employees[0].referrer, '');
 });
@@ -355,11 +366,11 @@ test('saving a referrer updates every grade and every store without changing pri
 test('failed referral saves retain the previous tag and newer remote referrals cannot be overwritten by a stale form', async () => {
     const { manager, fields, alerts } = app();
     manager.editingEmployeeId = manager.employees[0].id; manager._editingEmployeeReferrer = '';
-    employeeFields(fields, '加加');
+    employeeFields(fields, '嘉嘉');
     manager.dbManager.saveJlPriceTable = async () => { throw new Error('offline'); };
     await manager.saveEmployee();
     assert.equal(manager.employees[0].referrer, '');
-    assert.equal(fields.employeeReferrer.value, '加加');
+    assert.equal(fields.employeeReferrer.value, '嘉嘉');
     manager._jlApplyPriceTableRows(original.map(row => ({ ...row, referrer: '点点' })));
     let writes = 0;
     manager.dbManager.saveJlPriceTable = async () => { writes++; };

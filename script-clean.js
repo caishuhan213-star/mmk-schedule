@@ -4396,9 +4396,6 @@ ${photoStatus}`;
                 if (this.editingEmployeeId === employee.id) document.getElementById('employeeReferrer')?.focus();
             });
             text.appendChild(referrer);
-            const configured = prices.filter(r => r.employeeId === employee.rosterId && r.price !== null).length;
-            text.appendChild(element('span', configured === grades.length ? 'employee-price-tag' : 'employee-price-tag pending',
-                configured === grades.length ? '价格已设置' : `${configured}/${grades.length} 个等级已设置`));
             identity.append(avatar, text);
             const details = element('div', 'employee-directory-meta');
             const phone = element('div', 'employee-directory-field');
@@ -4577,7 +4574,7 @@ ${photoStatus}`;
         if (this.employees.some(e => e.name === name && e.id !== this.editingEmployeeId)) {
             alert('员工姓名已存在'); return;
         }
-        let referrer = document.getElementById('employeeReferrer')?.value.trim() ?? old?.referrer ?? '';
+        let referrer = EmployeeRoster.normalizeReferrer(document.getElementById('employeeReferrer')?.value ?? old?.referrer ?? '');
         if (referrer.length > 40) { alert('推荐人名称请控制在 40 个字以内'); return; }
         const referralBeforeEditing = this._editingEmployeeReferrer ?? old?.referrer ?? '';
         if (editing && referrer === referralBeforeEditing) referrer = old.referrer || '';
