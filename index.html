@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=14">
-    <link rel="stylesheet" href="employee-directory.css?v=2">
+    <link rel="stylesheet" href="employee-directory.css?v=3">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -433,12 +433,13 @@
                             <p id="employeeSyncStatus" role="status">正在连接云端名单…</p>
                         </div>
                         <div class="employee-directory-toolbar">
-                            <button id="employeePriceShortcut" class="btn btn-secondary">管理价格表</button>
+                            <button id="employeeAddGrade" class="btn btn-secondary">＋ 新增等级</button>
                             <button id="addEmployeeBtn" class="btn btn-primary">＋ 添加员工</button>
                         </div>
                     </div>
                     <form id="employeeSearchForm" class="employee-directory-filters" role="search" autocomplete="off">
                         <input id="employeeSearch" name="employeeDirectoryQuery" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜索员工姓名或电话" aria-label="搜索员工姓名或电话">
+                        <span class="employee-price-hint">价格单位：元 · 修改后点击该员工的“保存价格”</span>
                     </form>
                     <div class="employee-directory" id="employeeList">
                         <!-- 员工列表将通过JavaScript动态填充 -->
@@ -1577,28 +1578,6 @@
                     </div>
                 </section>
 
-                <!-- 价格表管理弹窗 -->
-                <div id="jlPriceModal" class="jl-modal" style="display:none;">
-                    <div class="jl-modal-content">
-                        <div class="jl-modal-header">
-                            <h2>💻 员工等级价格表管理</h2>
-                            <span class="jl-modal-close" id="jlClosePriceModal">&times;</span>
-                        </div>
-                        <div class="jl-modal-body">
-                            <p class="employee-form-hint">员工姓名与所有店铺名单同步，修改后自动保存。价格留空表示待设置；移除员工会保留已有资料与历史排班。</p>
-                            <div class="jl-price-actions">
-                                <button id="jlAddPriceRow" class="btn btn-primary">➕ 添加员工</button>
-                                <button id="jlAddGrade" class="btn btn-info">➕ 新增等级</button>
-                            </div>
-                            <div class="jl-price-table-wrap">
-                                <table class="jl-price-table">
-                                    <thead id="jlPriceTableHead"></thead>
-                                    <tbody id="jlPriceTableBody"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -1723,7 +1702,7 @@
                 <span class="close" onclick="scheduleManager.closeEmployeeModal()">&times;</span>
             </div>
             <form id="employeeForm" class="form">
-                <p class="employee-form-hint">姓名与价格表在所有店铺同步；联系方式、头像和备注保留在当前店铺。新员工的价格请在价格表中填写。</p>
+                <p class="employee-form-hint">姓名与价格表在所有店铺同步；联系方式、头像和备注保留在当前店铺。新员工的价格可直接在列表中填写。</p>
                 <div class="form-group">
                     <label for="employeeNameInput">员工姓名</label>
                     <input type="text" id="employeeNameInput" required>
@@ -1910,7 +1889,7 @@
     <script src="employee-roster.js?v=1"></script>
     <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=35"></script>
+    <script src="script-clean.js?v=36"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

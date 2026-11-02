@@ -937,7 +937,7 @@ class ScheduleManager {
             'openAddEmployeeModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
             'handlePhotoUpload', 'removePhoto',
             'saveSalaryTiersData', 'saveSalaryPassword',
-            'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
+            'jlImportCsv', 'jlOpenPriceManager', 'saveEmployeePrices', 'addEmployeePriceGrade',
             'importLatestData', 'toggleAutoImport',
         ]);
 
@@ -952,7 +952,7 @@ class ScheduleManager {
             'handlePhotoUpload', 'removePhoto',
             'openStoreModal', 'saveStore', 'editStore', 'deleteStore',
             'saveSalaryTiersData', 'saveSalaryPassword',
-            'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
+            'jlImportCsv', 'jlOpenPriceManager', 'saveEmployeePrices', 'addEmployeePriceGrade',
             'importLatestData', 'toggleAutoImport',
         ];
 
@@ -4280,7 +4280,15 @@ ${photoStatus}`;
     renderEmployeeList() {
         const search = document.getElementById('employeeSearch');
         if (search && search.value !== (this._employeeSearchQuery || '')) search.value = this._employeeSearchQuery || '';
+        const focused = document.activeElement;
+        const focusKey = focused?.classList?.contains('employee-price-input')
+            ? { employeeId: focused.dataset.employeeId, grade: focused.dataset.grade } : null;
         this._renderEmployeeDirectory();
+        if (focusKey) {
+            Array.from(document.querySelectorAll('#employeeList .employee-price-input'))
+                .find(input => input.dataset.employeeId === focusKey.employeeId && input.dataset.grade === focusKey.grade)
+                ?.focus({ preventScroll: true });
+        }
         const count = document.getElementById('employeeRosterCount');
         if (count) count.textContent = `${this.employees.length} 位员工`;
         const status = document.getElementById('employeeSyncStatus');
@@ -4306,6 +4314,8 @@ ${photoStatus}`;
             if (text !== undefined) node.textContent = text;
             return node;
         };
+        const prices = this.jlLoadPriceTable();
+        const grades = [...new Set(prices.map(price => price.grade))].sort();
         employees.forEach(employee => {
             const row = element('article', 'employee-directory-row');
             const identity = element('div', 'employee-directory-identity');
@@ -4317,15 +4327,17 @@ ${photoStatus}`;
             }
             const text = element('div', 'employee-directory-name');
             text.appendChild(element('h4', '', employee.name));
-            const priced = this.jlLoadPriceTable().some(r => r.name === employee.name && r.price !== null);
-            text.appendChild(element('span', priced ? 'employee-price-tag' : 'employee-price-tag pending', priced ? '价格已设置' : '待设置价格'));
+            const configured = prices.filter(r => r.employeeId === employee.rosterId && r.price !== null).length;
+            text.appendChild(element('span', configured === grades.length ? 'employee-price-tag' : 'employee-price-tag pending',
+                configured === grades.length ? '价格已设置' : `${configured}/${grades.length} 个等级已设置`));
             identity.append(avatar, text);
             const details = element('div', 'employee-directory-meta');
             const phone = element('div', 'employee-directory-field');
             phone.append(element('span', 'employee-directory-label', '联系电话'), element('span', '', employee.phone || '未填写'));
             const date = element('div', 'employee-directory-field');
             date.append(element('span', 'employee-directory-label', '入职日期'), element('span', '', employee.hireDate || '未填写'));
-            details.append(phone, date);
+            if (employee.phone) details.appendChild(phone);
+            if (employee.hireDate) details.appendChild(date);
             const notes = element('p', 'employee-directory-notes', employee.notes || '暂无备注');
             notes.title = employee.notes || '';
             const actions = element('div', 'employee-directory-actions');
@@ -4335,9 +4347,100 @@ ${photoStatus}`;
             remove.type = 'button'; remove.setAttribute('aria-label', `移除${employee.name}`);
             remove.addEventListener('click', () => this.deleteEmployee(employee.id));
             actions.append(edit, remove);
-            row.append(identity, details, notes, actions);
+            if (employee.notes) details.appendChild(notes);
+            const pricePanel = this._createEmployeePricePanel(employee, grades, prices);
+            row.append(identity, pricePanel, actions);
+            if (details.childElementCount) row.appendChild(details);
             container.appendChild(row);
         });
+    }
+
+    _createEmployeePricePanel(employee, grades, prices) {
+        const panel = document.createElement('div');
+        panel.className = 'employee-price-panel';
+        const grid = document.createElement('div');
+        grid.className = 'employee-price-grid';
+        const controls = document.createElement('div');
+        controls.className = 'employee-price-edit-actions';
+        controls.hidden = !this._employeePriceDrafts?.has(employee.rosterId);
+        const status = document.createElement('span');
+        status.className = 'employee-price-draft-status';
+        status.textContent = '价格未保存';
+        const save = document.createElement('button');
+        save.type = 'button'; save.className = 'btn btn-primary'; save.textContent = '保存价格';
+        save.addEventListener('click', () => this.saveEmployeePrices(employee.rosterId));
+        const cancel = document.createElement('button');
+        cancel.type = 'button'; cancel.className = 'btn btn-secondary'; cancel.textContent = '取消';
+        cancel.addEventListener('click', () => {
+            this._employeePriceDrafts?.delete(employee.rosterId);
+            this.renderEmployeeList();
+        });
+        controls.append(status, save, cancel);
+        grades.forEach(grade => {
+            const saved = prices.find(row => row.employeeId === employee.rosterId && row.grade === grade)?.price ?? null;
+            const draft = this._employeePriceDrafts?.get(employee.rosterId)?.get(grade);
+            const label = document.createElement('label');
+            label.className = 'employee-price-cell';
+            const title = document.createElement('span'); title.textContent = grade;
+            const input = document.createElement('input');
+            input.type = 'number'; input.min = '0'; input.step = 'any'; input.inputMode = 'decimal';
+            input.autocomplete = 'off'; input.className = 'employee-price-input';
+            input.dataset.employeeId = employee.rosterId; input.dataset.grade = grade;
+            input.setAttribute('aria-label', `${employee.name} ${grade} 价格`);
+            input.placeholder = '待设置'; input.value = draft ? draft.value : (saved ?? '');
+            input.disabled = !this._jlPriceReady || !!this._jlPriceWritePending;
+            input.addEventListener('input', () => {
+                this._setEmployeePriceDraft(employee.rosterId, grade, input.value, saved, input.validity.badInput);
+                controls.hidden = !this._employeePriceDrafts.has(employee.rosterId);
+            });
+            label.append(title, input); grid.appendChild(label);
+        });
+        save.disabled = cancel.disabled = !!this._jlPriceWritePending;
+        panel.append(grid, controls);
+        return panel;
+    }
+
+    _setEmployeePriceDraft(employeeId, grade, value, originalPrice, invalid = false) {
+        this._employeePriceDrafts ||= new Map();
+        const draft = this._employeePriceDrafts.get(employeeId) || new Map();
+        const baseline = draft.has(grade) ? draft.get(grade).originalPrice : originalPrice;
+        const parsed = value === '' ? null : Number(value);
+        if (!invalid && parsed === baseline) draft.delete(grade);
+        else draft.set(grade, { value, originalPrice: baseline, invalid });
+        if (draft.size) this._employeePriceDrafts.set(employeeId, draft);
+        else this._employeePriceDrafts.delete(employeeId);
+    }
+
+    async saveEmployeePrices(employeeId) {
+        if (!this._requireEmployeeSyncReady(false)) return false;
+        const draft = this._employeePriceDrafts?.get(employeeId);
+        if (!draft?.size) return false;
+        const current = this.jlLoadPriceTable();
+        const person = EmployeeRoster.roster(current).find(employee => employee.employeeId === employeeId);
+        if (!person) { alert('该员工已被移除，请刷新名单。'); return false; }
+        const rows = current.map(row => ({ ...row }));
+        for (const [grade, change] of draft) {
+            const price = change.value === '' ? null : Number(change.value);
+            if (change.invalid || (price !== null && (!Number.isFinite(price) || price < 0))) {
+                alert(`${grade} 价格须为零或正数，留空表示待设置。`); return false;
+            }
+            const row = rows.find(item => item.employeeId === employeeId && item.grade === grade);
+            if ((row?.price ?? null) !== change.originalPrice) {
+                alert(`${grade} 价格已在其他设备更新。请点击“取消”查看最新价格后重新修改。`); return false;
+            }
+            if (!current.some(item => item.grade === grade)) {
+                alert('该等级已被移除，请取消本次修改后重试。'); return false;
+            }
+            if (row) row.price = price;
+            else rows.push({ ...person, grade, price });
+        }
+        const saved = await this.jlSavePriceTable(rows);
+        if (saved) {
+            this._employeePriceDrafts.delete(employeeId);
+            this.renderEmployeeList();
+            this.showSuccessMessage(`${person.name}的价格已保存，并同步到所有店铺`);
+        }
+        return saved;
     }
 
     // 更新员工选择器（员工数据由 onSnapshot 实时推送，this.employees 始终最新）
@@ -4423,7 +4526,7 @@ ${photoStatus}`;
         const saved = await this.jlSavePriceTable(rows, { profile, storeId: this.currentStoreId });
         if (saved) {
             this.closeEmployeeModal();
-            this.showSuccessMessage(editing ? '员工资料已保存，姓名已同步到所有店铺' : '员工已添加并同步，请在价格表中填写价格');
+            this.showSuccessMessage(editing ? '员工资料已保存，姓名已同步到所有店铺' : '员工已添加并同步，可在列表中填写价格');
         }
     }
 
@@ -10227,10 +10330,6 @@ ${photoStatus}`;
         this.jlRefreshPriceStatus();
         this._refreshEmployeeRoster();
 
-        const modal = document.getElementById('jlPriceModal');
-        if (modal && modal.style.display && modal.style.display !== 'none') {
-            this.jlRenderPriceTable();
-        }
     }
 
     async jlSavePriceTable(rows, options = {}) {
@@ -10253,7 +10352,6 @@ ${photoStatus}`;
             if (error.latestRows) this._jlApplyPriceTableRows(error.latestRows);
             this._employeeSyncError = '保存未完成，请重试';
             alert(`保存失败：${error.message || '请检查网络连接'}\n本次修改尚未保存。`);
-            this.jlRenderPriceTable();
             return false;
         } finally {
             this._jlPriceWritePending = false;
@@ -10263,7 +10361,7 @@ ${photoStatus}`;
     }
 
     _setEmployeeSaving(saving) {
-        document.querySelectorAll('#jlPriceModal input, #jlPriceModal button, #employeeForm input, #employeeForm textarea, #employeeForm button[type="submit"]')
+        document.querySelectorAll('#employeeList .employee-price-input, #employeeList button, #employeeAddGrade, #addEmployeeBtn, #employeeForm input, #employeeForm textarea, #employeeForm button[type="submit"]')
             .forEach(control => { control.disabled = saving; });
     }
 
@@ -10320,9 +10418,9 @@ ${photoStatus}`;
     // --- 初始化事件绑定 ---
     jlInit() {
         this.initializeEmployeeSearch();
-        document.getElementById('employeePriceShortcut')?.addEventListener('click', () => this.jlOpenPriceModal());
+        document.getElementById('employeeAddGrade')?.addEventListener('click', () => this.addEmployeePriceGrade());
         document.getElementById('jlImportCsv')?.addEventListener('click', () => this.jlImportCsv());
-        document.getElementById('jlManagePrice')?.addEventListener('click', () => this.jlOpenPriceModal());
+        document.getElementById('jlManagePrice')?.addEventListener('click', () => this.jlOpenPriceManager());
         document.getElementById('jlExportCsv')?.addEventListener('click', () => this.jlExportCsv());
         document.getElementById('jlConvertBtn')?.addEventListener('click', () => this.jlConvert());
         document.getElementById('jlCopyResult')?.addEventListener('click', () => this.jlCopyResult());
@@ -10335,10 +10433,6 @@ ${photoStatus}`;
             const s = document.getElementById('jlStats'); if (s) s.style.display = 'none';
             const d = document.getElementById('jlDetailSection'); if (d) d.style.display = 'none';
             const st = document.getElementById('jlConvertStatus'); if (st) st.textContent = '';
-        });
-        document.getElementById('jlClosePriceModal')?.addEventListener('click', () => this.jlClosePriceModal());
-        document.getElementById('jlPriceModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'jlPriceModal') this.jlClosePriceModal();
         });
         this.jlRefreshPriceStatus();
     }
@@ -10390,106 +10484,20 @@ ${photoStatus}`;
         a.click();
     }
 
-    // --- 价格表弹窗 ---
-    jlOpenPriceModal() {
-        const m = document.getElementById('jlPriceModal');
-        if (m) {
-            // The price editor is also opened from Data Management, whose sibling
-            // conversion tab may be hidden. Keep the overlay outside either tab.
-            if (m.parentElement !== document.body) document.body.appendChild(m);
-            m.style.display = 'flex';
-            this.jlRenderPriceTable();
-        }
+    // Both tabs use the same visible employee-and-price directory.
+    jlOpenPriceManager() {
+        this.switchTab('management');
+        document.querySelector('.employee-section')?.scrollIntoView({ block: 'start' });
     }
 
-    jlClosePriceModal() {
-        const m = document.getElementById('jlPriceModal');
-        if (m) m.style.display = 'none';
-        this.jlRefreshPriceStatus();
-    }
-
-    jlRenderPriceTable() {
-        const rows = this.jlLoadPriceTable();
-        const allGrades = [...new Set(rows.map(r => r.grade))].sort();
-        const grades = allGrades.length ? allGrades : ['S', 'SS', 'SSS', 'SSSS', 'SX'];
-        const thead = document.getElementById('jlPriceTableHead');
-        const tbody = document.getElementById('jlPriceTableBody');
-        if (!thead || !tbody) return;
-        const header = document.createElement('tr');
-        ['员工姓名', ...grades, '操作'].forEach(label => {
-            const th = document.createElement('th'); th.textContent = label; header.appendChild(th);
-        });
-        thead.replaceChildren(header); tbody.replaceChildren();
-        EmployeeRoster.roster(rows).forEach(person => {
-            const tr = document.createElement('tr');
-            tr.dataset.employeeId = person.employeeId;
-            const nameCell = document.createElement('td');
-            const input = document.createElement('input');
-            input.type = 'text'; input.value = person.name; input.dataset.field = 'name';
-            input.setAttribute('aria-label', '员工姓名');
-            nameCell.appendChild(input); tr.appendChild(nameCell);
-            grades.forEach(grade => {
-                const td = document.createElement('td');
-                const price = document.createElement('input');
-                price.type = 'number'; price.min = '0'; price.step = 'any';
-                price.dataset.grade = grade; price.placeholder = '待设置';
-                price.setAttribute('aria-label', `${person.name} ${grade} 价格`);
-                price.value = rows.find(row => row.name === person.name && row.grade === grade)?.price ?? '';
-                td.appendChild(price); tr.appendChild(td);
-            });
-            const action = document.createElement('td');
-            const button = document.createElement('button');
-            button.type = 'button'; button.className = 'jl-btn-del'; button.textContent = '移除';
-            button.onclick = async () => {
-                if (!this._requireEmployeeSyncReady(false)) return;
-                if (confirm(`将“${person.name}”从价格表和所有店铺的员工名单移除？\n已有资料和历史排班会保留。`)) {
-                    await this.jlSavePriceTable(this.jlLoadPriceTable().filter(row => row.employeeId !== person.employeeId));
-                }
-            };
-            action.appendChild(button); tr.appendChild(action); tbody.appendChild(tr);
-            tr.querySelectorAll('input').forEach(control => control.addEventListener('change', () => this._jlSaveFromModal(grades)));
-        });
-        document.getElementById('jlAddPriceRow').onclick = async () => {
-            if (!this._requireEmployeeSyncReady(false)) return;
-            const name = (prompt('请输入员工姓名（将同步到所有店铺）：') || '').trim();
-            if (!name) return;
-            if (this.jlLoadPriceTable().some(row => row.name === name)) { alert('员工姓名已存在'); return; }
-            const employeeId = `employee-${crypto.randomUUID()}`;
-            await this.jlSavePriceTable([...this.jlLoadPriceTable(), ...grades.map(grade => ({ name, grade, price: null, employeeId, aliases: [] }))]);
-        };
-        document.getElementById('jlAddGrade').onclick = async () => {
-            if (!this._requireEmployeeSyncReady(false)) return;
-            const grade = (prompt('请输入等级名称（如 S、SS、SSS...）：') || '').trim().toUpperCase();
-            if (!grade) return;
-            const existing = this.jlLoadPriceTable();
-            if (!existing.length) { alert('请先添加员工'); return; }
-            if (existing.some(row => row.grade === grade)) { alert('该等级已存在'); return; }
-            await this.jlSavePriceTable([...existing, ...EmployeeRoster.roster(existing).map(person => ({ ...person, grade, price: null }))]);
-        };
-        this._setEmployeeSaving(!!this._jlPriceWritePending);
-    }
-
-    async _jlSaveFromModal(grades) {
-        if (!this._requireEmployeeSyncReady(false)) { this.jlRenderPriceTable(); return; }
-        const tbody = document.getElementById('jlPriceTableBody');
-        if (!tbody) return;
-        const rows = [], names = new Set();
-        try {
-            tbody.querySelectorAll('tr').forEach(tr => {
-                const name = tr.querySelector('input[data-field="name"]').value.trim();
-                if (!name) throw new Error('员工姓名不能为空');
-                if (names.has(name)) throw new Error('员工姓名不能重复');
-                names.add(name);
-                const previous = this.jlLoadPriceTable().find(row => row.employeeId === tr.dataset.employeeId);
-                const aliases = [...new Set([...(previous?.aliases || []), previous?.name].filter(old => old && old !== name))];
-                tr.querySelectorAll('input[data-grade]').forEach(input => {
-                    const price = input.value === '' ? null : Number(input.value);
-                    if (input.validity.badInput || (price !== null && (!Number.isFinite(price) || price < 0))) throw new Error('价格须为零或正数，留空表示待设置');
-                    rows.push({ name, grade: input.dataset.grade, price, employeeId: tr.dataset.employeeId, aliases });
-                });
-            });
-            return await this.jlSavePriceTable(rows);
-        } catch (error) { alert(error.message); this.jlRenderPriceTable(); }
+    async addEmployeePriceGrade() {
+        if (!this._requireEmployeeSyncReady(false)) return;
+        const grade = (prompt('请输入等级名称（如 S、SS、SSS...）：') || '').trim().toUpperCase();
+        if (!grade) return;
+        const existing = this.jlLoadPriceTable();
+        if (!existing.length) { alert('请先添加员工'); return; }
+        if (existing.some(row => row.grade === grade)) { alert('该等级已存在'); return; }
+        await this.jlSavePriceTable([...existing, ...EmployeeRoster.roster(existing).map(person => ({ ...person, grade, price: null }))]);
     }
 
     // ---- 时间转换引擎 ----

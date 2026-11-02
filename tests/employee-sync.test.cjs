@@ -18,7 +18,7 @@ function app() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../script-clean.js'), 'utf8') + '\nglobalThis.Manager = ScheduleManager;', context);
     const manager = Object.create(context.Manager.prototype);
     Object.assign(manager, { jlPriceTable: prices(), _employeeProfiles: [], employees: [], currentStoreId: 'a', dataKeyPrefix: 'store_a_', _jlPriceReady: true, _employeeProfilesReady: true, dbManager: {} });
-    for (const method of ['renderEmployeeList', 'updateAttendanceFeeSelectors', 'updateInterviewFeeSelectors', 'jlRefreshPriceStatus', 'jlRenderPriceTable', 'closeEmployeeModal', 'showSuccessMessage']) manager[method] = () => {};
+    for (const method of ['renderEmployeeList', 'updateAttendanceFeeSelectors', 'updateInterviewFeeSelectors', 'jlRefreshPriceStatus', 'closeEmployeeModal', 'showSuccessMessage']) manager[method] = () => {};
     manager.updateEmployeeSelectors = async () => {};
     manager.canModifyData = () => true;
     manager._refreshEmployeeRoster();
@@ -77,10 +77,9 @@ test('unset rates never borrow another employee price; an explicit zero is kept'
     assert.equal(manager._jlParseLine('零价S，9-10，测试客户（200）美团', rows)[0].gradePrice, 0);
 });
 
-test('a successful update refreshes the open flex-based price dialog', () => {
-    const { manager, fields } = app(); let renders = 0;
-    fields.jlPriceModal = { style: { display: 'flex' } };
-    manager.jlRenderPriceTable = () => { renders++; };
+test('a successful price update refreshes the inline employee directory', () => {
+    const { manager } = app(); let renders = 0;
+    manager.renderEmployeeList = () => { renders++; };
     manager._jlApplyPriceTableRows(original);
     assert.equal(renders, 1);
 });
@@ -218,4 +217,74 @@ test('intentional employee searches survive cloud updates and can be cleared nor
     assert.equal(manager._employeeSearchQuery, '');
     input.value = '小夏'; manager.updateEmployeeSearch(input); manager.resetEmployeeSearch();
     assert.equal(input.value, ''); assert.equal(manager._employeeSearchQuery, '');
+});
+
+test('inline edits save only changed cells while retaining filtered-out employees and new remote prices', async () => {
+    const { manager } = app();
+    const id = manager.jlPriceTable[0].employeeId;
+    manager._employeeSearchQuery = '小林';
+    manager._setEmployeePriceDraft(id, 'S', '125.5', 100);
+    manager._jlApplyPriceTableRows(original.map(row => row.grade === 'SS' ? { ...row, price: 210 } : row));
+    let write;
+    manager.dbManager.saveJlPriceTable = async rows => { write = copy(rows); };
+    assert.equal(await manager.saveEmployeePrices(id), true);
+    assert.deepEqual(write.map(row => row.price), [125.5, 210, 200]);
+    assert.equal(manager._employeePriceDrafts.size, 0);
+});
+
+test('inline rates allow zero and blank and can fill a previously missing grade', async () => {
+    const { manager } = app();
+    const id = manager.jlPriceTable[2].employeeId;
+    manager.dbManager.saveJlPriceTable = async () => {};
+    manager._setEmployeePriceDraft(id, 'S', '0', 200);
+    manager._setEmployeePriceDraft(id, 'SS', '160', null);
+    assert.equal(await manager.saveEmployeePrices(id), true);
+    assert.deepEqual(manager.jlPriceTable.filter(row => row.employeeId === id).map(row => row.price), [0, 160]);
+    manager._setEmployeePriceDraft(id, 'SS', '', 160);
+    assert.equal(await manager.saveEmployeePrices(id), true);
+    assert.equal(manager.jlPriceTable.find(row => row.employeeId === id && row.grade === 'SS').price, null);
+});
+
+test('invalid inline prices are rejected and failed saves retain edits for retry', async () => {
+    const { manager, alerts } = app();
+    const id = manager.jlPriceTable[0].employeeId;
+    let writes = 0;
+    manager.dbManager.saveJlPriceTable = async () => { writes++; throw new Error('offline'); };
+    for (const [value, invalid] of [['-1', false], ['Infinity', false], ['', true]]) {
+        manager._setEmployeePriceDraft(id, 'S', value, 100, invalid);
+        assert.equal(await manager.saveEmployeePrices(id), false);
+    }
+    assert.equal(writes, 0);
+    manager._setEmployeePriceDraft(id, 'S', '130', 100);
+    assert.equal(await manager.saveEmployeePrices(id), false);
+    assert.equal(writes, 1);
+    assert.equal(manager._employeePriceDrafts.get(id).get('S').value, '130');
+    assert.equal(manager.jlPriceTable[0].price, 100);
+    assert.match(alerts.at(-1), /尚未保存/);
+});
+
+test('same-cell remote changes cannot be overwritten, including a price that was initially blank', async () => {
+    for (const initial of [100, null]) {
+        const { manager, alerts } = app();
+        manager._jlApplyPriceTableRows(original.map((row, i) => i === 0 ? { ...row, price: initial } : row));
+        const id = manager.jlPriceTable[0].employeeId;
+        manager._setEmployeePriceDraft(id, 'S', '130', initial);
+        manager._jlApplyPriceTableRows(original.map((row, i) => i === 0 ? { ...row, price: 140 } : row));
+        // The next input event comes from a newly rendered field with the latest saved value.
+        manager._setEmployeePriceDraft(id, 'S', '150', 140);
+        let writes = 0;
+        manager.dbManager.saveJlPriceTable = async () => { writes++; };
+        assert.equal(await manager.saveEmployeePrices(id), false);
+        assert.equal(writes, 0);
+        assert.equal(manager._employeePriceDrafts.get(id).get('S').originalPrice, initial);
+        assert.match(alerts.at(-1), /其他设备更新/);
+    }
+});
+
+test('returning an inline price to its original value discards the pending edit', () => {
+    const { manager } = app();
+    const id = manager.jlPriceTable[0].employeeId;
+    manager._setEmployeePriceDraft(id, 'S', '130', 100);
+    manager._setEmployeePriceDraft(id, 'S', '100', 100);
+    assert.equal(manager._employeePriceDrafts.size, 0);
 });

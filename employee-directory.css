@@ -13,7 +13,7 @@
 #employeeSearch:autofill { animation: employee-search-autofill 0.01s; }
 #employeeSearch:-webkit-autofill { animation: employee-search-autofill 0.01s; }
 .employee-directory { max-height: none; overflow: visible; }
-.employee-directory-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(240px, 1.25fr) minmax(120px, 1fr) auto; align-items: center; gap: 20px; padding: 16px 12px; border-top: 1px solid var(--color-border); }
+.employee-directory-row { display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(0, 3fr) auto; align-items: center; column-gap: 24px; row-gap: 12px; padding: 18px 12px; border-top: 1px solid var(--color-border); }
 .employee-directory-row:hover { background: var(--color-surface-alt); }
 .employee-directory-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .employee-directory-avatar { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--color-primary-light); color: var(--color-text); font-size: 18px; font-weight: 600; overflow: hidden; }
@@ -22,10 +22,23 @@
 .employee-directory-name h4 { margin: 0 0 5px; font-size: 15px; color: var(--color-text); overflow-wrap: anywhere; }
 .employee-price-tag { font-size: 11px; color: var(--color-text-secondary); }
 .employee-price-tag.pending { color: var(--color-warning, #b07820); }
-.employee-directory-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; min-width: 0; }
-.employee-directory-field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; overflow-wrap: anywhere; color: var(--color-text); }
+.employee-directory-meta { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; min-width: 0; padding-left: 56px; }
+.employee-directory-field { display: flex; align-items: baseline; gap: 8px; font-size: 12px; overflow-wrap: anywhere; color: var(--color-text-secondary); }
 .employee-directory-label { color: var(--color-text-muted); font-size: 11px; }
 .employee-directory-notes { color: var(--color-text-secondary); font-size: 12px; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.employee-price-hint { color: var(--color-text-muted); font-size: 12px; line-height: 1.6; }
+.employee-price-panel { min-width: 0; }
+.employee-price-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 12px; }
+.employee-price-cell { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: var(--color-text-secondary); font-size: 12px; }
+.employee-price-cell > span { overflow-wrap: anywhere; }
+.employee-price-input { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px 10px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 14px; }
+.employee-price-input::placeholder { color: var(--color-text-muted); font-size: 12px; }
+.employee-price-input:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.employee-price-input:disabled { opacity: 0.6; cursor: wait; }
+.employee-price-edit-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.employee-price-edit-actions[hidden] { display: none; }
+.employee-price-edit-actions .btn { padding: 6px 10px; font-size: 12px; }
+.employee-price-draft-status { margin-right: auto; font-size: 12px; color: var(--color-text-secondary); }
 .employee-directory-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .employee-directory-actions .btn { padding: 7px 10px; font-size: 12px; white-space: nowrap; }
 .employee-remove-btn { color: var(--color-danger, #c43e3e); background: transparent; border: 1px solid var(--color-border); }
@@ -37,25 +50,25 @@
 #employeeForm .modal-actions { display: flex; justify-content: flex-end; }
 .employee-form-hint { margin: 0; padding: 12px; background: var(--color-surface-alt); border-radius: var(--radius-md); font-size: 12px; line-height: 1.7; color: var(--color-text-secondary); }
 #employeeModal { z-index: 1100; }
-#jlPriceModal input[data-field="name"] { min-width: 90px; max-width: 150px; }
 @media (max-width: 1000px) {
-    .employee-directory-row { grid-template-columns: minmax(140px, 1fr) minmax(210px, 1fr) auto; gap: 14px; }
-    .employee-directory-notes { grid-column: 1 / 3; grid-row: 2; }
-    .employee-directory-actions { grid-column: 3; grid-row: 1 / 3; }
+    .employee-directory-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; }
+    .employee-directory-identity { grid-column: 1; grid-row: 1; }
+    .employee-directory-actions { grid-column: 2; grid-row: 1; }
+    .employee-price-panel { grid-column: 1 / -1; grid-row: 2; }
+    .employee-directory-meta { padding-left: 0; }
 }
 @media (max-width: 640px) {
     .employee-section { padding: 16px; }
     .employee-directory-header { align-items: flex-start; flex-direction: column; gap: 14px; }
     .employee-directory-toolbar { width: 100%; }
     .employee-directory-toolbar .btn { flex: 1; }
-    .employee-directory-filters { flex-wrap: nowrap; }
-    #employeeSearch { min-width: 0; flex: 1; }
-    .employee-directory-filters .btn { white-space: nowrap; }
+    .employee-directory-filters { align-items: flex-start; flex-direction: column; }
+    #employeeSearch { min-width: 0; width: 100%; }
     .employee-directory-row { grid-template-columns: minmax(0, 1fr) auto; padding: 16px 2px; gap: 12px; }
     .employee-directory-identity { grid-column: 1; grid-row: 1; }
     .employee-directory-actions { grid-column: 2; grid-row: 1; gap: 4px; }
-    .employee-directory-meta { grid-column: 1 / -1; grid-row: 2; }
-    .employee-directory-notes { grid-column: 1 / -1; grid-row: 3; }
+    .employee-price-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; }
+    .employee-directory-meta { grid-column: 1 / -1; grid-row: 3; }
     .employee-directory-actions .btn { padding: 8px; }
     #employeeForm { grid-template-columns: 1fr; }
     #employeeForm > * { grid-column: 1; }
