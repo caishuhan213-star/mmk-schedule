@@ -425,16 +425,6 @@
         <!-- 数据管理页面 -->
         <div id="management-tab" class="tab-content">
             <div class="management-content">
-                <!-- 存储空间管理区域 -->
-                <section class="storage-section" style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin-bottom: 30px;">
-                    <h2 style="color: #856404; margin-bottom: 15px;">💾 存储空间管理</h2>
-                    <p style="color: #856404; margin-bottom: 15px;">管理浏览器存储空间，避免数据保存失败</p>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button id="checkStorageBtn" class="btn btn-info">📊 查看存储使用情况</button>
-                        <button id="cleanPhotosBtn" class="btn btn-warning">🧹 清理员工头像</button>
-                    </div>
-                </section>
-
                 <!-- 员工信息管理区域 -->
                 <section class="employee-section">
                     <div class="employee-directory-header">
@@ -456,57 +446,6 @@
                     </div>
                 </section>
 
-                <!-- 项目管理区域 -->
-                <section class="project-section">
-                    <h2>项目管理</h2>
-                    <div class="project-controls">
-                        <button id="addProjectBtn" class="btn btn-primary">添加项目</button>
-                        <button id="manageProjectsBtn" class="btn btn-secondary">管理项目</button>
-                    </div>
-                    <div class="project-list" id="projectList">
-                        <!-- 项目列表将通过JavaScript动态填充 -->
-                    </div>
-                </section>
-
-                <!-- 员工薪资管理区域 -->
-                <section class="salary-management-section">
-                    <div class="section-header">
-                        <h2>💰 员工薪资管理</h2>
-                        <p>按项目设置薪资档位并分配员工</p>
-                    </div>
-
-                    <div class="salary-management-content">
-                        <!-- 左侧：项目选择和档位管理 -->
-                        <div class="salary-left-panel">
-                            <div class="salary-project-selector">
-                                <div class="form-group">
-                                    <label for="salaryProjectSelect">选择项目</label>
-                                    <select id="salaryProjectSelect" class="form-control">
-                                        <option value="">请选择项目</option>
-                                    </select>
-                                </div>
-                                <button id="addSalaryTierBtn" class="btn btn-primary" disabled>
-                                    ➕ 添加薪资档位
-                                </button>
-                            </div>
-
-                            <div class="salary-tiers-container" id="salaryTiersContainer">
-                                <div class="empty-state">
-                                    <p>👆 请先选择一个项目</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 右侧：员工分配区域 -->
-                        <div class="salary-right-panel">
-                            <div class="salary-employee-assignment" id="salaryEmployeeAssignment">
-                                <div class="empty-state">
-                                    <p>👈 请先选择一个薪资档位</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
             </div>
         </div>
 
@@ -1852,51 +1791,6 @@
         </div>
     </div>
 
-    <!-- 项目管理模态框 -->
-    <div id="projectModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="projectModalTitle">添加项目</h2>
-                <span class="close" onclick="scheduleManager.closeProjectModal()">&times;</span>
-            </div>
-            <form id="projectForm" class="form">
-                <div class="form-group">
-                    <label for="projectNameInput">项目名称</label>
-                    <input type="text" id="projectNameInput" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="projectDescription">项目描述</label>
-                    <textarea id="projectDescription" rows="4" placeholder="请输入项目详细描述..."></textarea>
-                </div>
-                
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeProjectModal()">取消</button>
-                    <button type="submit" class="btn btn-primary">保存项目</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- 项目列表管理模态框 -->
-    <div id="projectListModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>项目管理</h2>
-                <span class="close" onclick="scheduleManager.closeProjectListModal()">&times;</span>
-            </div>
-            <div class="project-management">
-                <div class="project-list-header">
-                    <h3>项目列表</h3>
-                    <button id="addNewProjectBtn" class="btn btn-primary">添加新项目</button>
-                </div>
-                <div class="project-list-container" id="projectListContainer">
-                    <!-- 项目列表将通过JavaScript动态填充 -->
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- 批量导入模态框 -->
     <div id="importModal" class="modal">
         <div class="modal-content">
@@ -1998,62 +1892,6 @@
         </div>
     </div>
 
-    <!-- 薪资档位添加/编辑模态框 -->
-    <div id="salaryTierModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="salaryTierModalTitle">添加薪资档位</h2>
-                <span class="close" onclick="scheduleManager.closeSalaryTierModal()">&times;</span>
-            </div>
-            <form id="salaryTierForm" class="form">
-                <div class="form-group">
-                    <label for="salaryTierName">档位名称</label>
-                    <input type="text" id="salaryTierName" placeholder="例如：1档、高级档位等" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="salaryTierAmount">薪资金额（元）</label>
-                    <input type="number" id="salaryTierAmount" min="0" step="0.01" placeholder="请输入薪资金额" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="salaryTierDescription">档位描述（可选）</label>
-                    <textarea id="salaryTierDescription" rows="3" placeholder="描述该档位的工作内容或要求..."></textarea>
-                </div>
-                
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeSalaryTierModal()">取消</button>
-                    <button type="submit" class="btn btn-primary">保存档位</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- 权限验证模态框 -->
-    <div id="salaryAuthModal" class="modal">
-        <div class="modal-content modal-small">
-            <div class="modal-header">
-                <h2>🔒 权限验证</h2>
-                <span class="close" onclick="scheduleManager.closeSalaryAuthModal()">&times;</span>
-            </div>
-            <div class="auth-content">
-                <p>此操作需要管理员权限，请输入密码：</p>
-                <form id="salaryAuthForm" class="form">
-                    <div class="form-group">
-                        <input type="password" id="salaryAuthPassword" placeholder="请输入管理密码" required>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-secondary" onclick="scheduleManager.closeSalaryAuthModal()">取消</button>
-                        <button type="submit" class="btn btn-primary">确认</button>
-                    </div>
-                </form>
-                <div class="auth-hint">
-                    <small>💡 默认密码：admin123（可在设置中修改）</small>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
         // 登录事件监听器
         document.addEventListener("DOMContentLoaded", function() {
@@ -2093,7 +1931,7 @@
     <script src="employee-roster.js?v=1"></script>
     <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=33"></script>
+    <script src="script-clean.js?v=34"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

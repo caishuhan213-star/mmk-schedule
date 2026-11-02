@@ -663,7 +663,6 @@ class ScheduleManager {
         this._jlPriceReady = false;
         this.currentSort = { field: null, direction: 'asc' };
         this.editingId = null;
-        this.editingProjectId = null;
         this.editingEmployeeId = null;
         this.editingAttendanceFeeId = null;
         this.editingInterviewFeeId = null;
@@ -678,12 +677,7 @@ class ScheduleManager {
             endDate: ''
         };
         this.reportRebateSort = { field: 'date', direction: 'desc' };
-        this.editingSalaryTierId = null;
         this.currentViewMode = 'day';
-        this.currentSalaryProject = null;
-        this.currentSalaryTier = null;
-        this.pendingSalaryAction = null;
-        this.isAuthenticated = false;
         this.currentUserRole = 'admin';
         this.currentUserEmail = '';
         this.isStaffReadOnly = false;
@@ -705,7 +699,6 @@ class ScheduleManager {
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('filterDate').value = today;
         this.filterByDate(today);
-        this.renderProjectList();
         this.updateProjectSelectors();
         this.renderEmployeeList();
         this.updateEmployeeSelectors().catch(err => console.error('更新员工选择器失败:', err));
@@ -717,7 +710,6 @@ class ScheduleManager {
         this.updateOperatingCostStats();
         this.renderReportRebateTable();
         this.renderEmployeeCommissionSummary();
-        this.initializeSalaryManagement();
 
         // 初始化接龙数据转换工具
         try { this.jlInit(); } catch (e) { console.error('接龙转换工具初始化失败:', e); }
@@ -941,11 +933,9 @@ class ScheduleManager {
             'addAttendanceFee', 'editAttendanceFee', 'deleteAttendanceFee', 'clearAllAttendanceFees',
             'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
             'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
-            'openAddProjectModal', 'openProjectListModal', 'saveProject', 'editProject', 'deleteProject',
             'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
-            'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
-            'saveSalaryTiersData', 'saveSalaryPassword', 'saveSalaryTier', 'deleteSalaryTier',
-            'addEmployeeToTier', 'removeEmployeeFromTier',
+            'handlePhotoUpload', 'removePhoto',
+            'saveSalaryTiersData', 'saveSalaryPassword',
             'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
             'importLatestData', 'toggleAutoImport',
         ]);
@@ -957,12 +947,10 @@ class ScheduleManager {
             'addInterviewFee', 'editInterviewFee', 'deleteInterviewFee', 'clearAllInterviewFees',
             'addOperatingCost', 'editOperatingCost', 'deleteOperatingCost', 'clearAllOperatingCosts',
             'addReportRebate', 'editReportRebate', 'deleteReportRebate', 'clearAllReportRebates',
-            'openAddProjectModal', 'openProjectListModal', 'saveProject', 'editProject', 'deleteProject',
             'openAddEmployeeModal', 'openEmployeeListModal', 'saveEmployee', 'editEmployee', 'deleteEmployee',
-            'handlePhotoUpload', 'removePhoto', 'removeAllEmployeePhotos',
+            'handlePhotoUpload', 'removePhoto',
             'openStoreModal', 'saveStore', 'editStore', 'deleteStore',
-            'saveSalaryTiersData', 'saveSalaryPassword', 'saveSalaryTier', 'deleteSalaryTier',
-            'addEmployeeToTier', 'removeEmployeeFromTier',
+            'saveSalaryTiersData', 'saveSalaryPassword',
             'jlImportCsv', 'jlOpenPriceModal', '_jlSaveFromModal',
             'importLatestData', 'toggleAutoImport',
         ];
@@ -1079,7 +1067,7 @@ class ScheduleManager {
                 this._cacheEmployeeProfiles();
             },
             projects: (data) => handleSnapshot('projects', data, 'projects',
-                this.saveProjects, [this.renderProjectList, this.updateProjectSelectors]),
+                this.saveProjects, [this.updateProjectSelectors]),
             attendanceFees: (data) => handleSnapshot('attendanceFees', data, 'attendanceFees',
                 this.saveAttendanceFees, [this.renderAttendanceFeeTable]),
             interviewFees: (data) => handleSnapshot('interviewFees', data, 'interviewFees',
@@ -1479,7 +1467,6 @@ class ScheduleManager {
         this.updateStoreSelector();
         this.renderTableWithCurrentFilter();
         this.updateStats();
-        this.renderProjectList();
         this.updateProjectSelectors();
         this.renderEmployeeList();
         this.updateEmployeeSelectors().catch(err => console.error('更新员工选择器失败:', err));
@@ -1491,7 +1478,6 @@ class ScheduleManager {
         this.updateOperatingCostStats();
         this.renderReportRebateTable();
         this.renderEmployeeCommissionSummary();
-        this.initializeSalaryManagement();
 
         const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
         if (activeTab === 'store-center') {
@@ -1903,151 +1889,6 @@ class ScheduleManager {
         });
     }
 
-    // 检查存储空间并显示警告
-    checkStorageSpace() {
-        try {
-            // 计算当前使用的存储空间
-            let totalSize = 0;
-            let storeData = {};
-            
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                const value = localStorage.getItem(key);
-                const size = new Blob([value]).size;
-                totalSize += size;
-                
-                // 按数据类型分类
-                if (key.includes('employees')) {
-                    storeData.employees = (storeData.employees || 0) + size;
-                } else if (key.includes('schedules')) {
-                    storeData.schedules = (storeData.schedules || 0) + size;
-                } else {
-                    storeData.other = (storeData.other || 0) + size;
-                }
-            }
-            
-            const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
-            const maxMB = 10; // 假设最大10MB
-            const usagePercent = ((totalSize / (maxMB * 1024 * 1024)) * 100).toFixed(1);
-            
-            // 如果使用超过80%，显示警告
-            if (usagePercent > 80) {
-                console.warn(`⚠️ 存储空间使用率：${usagePercent}% (${totalMB}MB / ${maxMB}MB)`);
-                
-                if (usagePercent > 90) {
-                    alert(
-                        `⚠️ 存储空间告急！\n\n` +
-                        `当前使用：${totalMB}MB / ${maxMB}MB (${usagePercent}%)\n\n` +
-                        `建议操作：\n` +
-                        `1. 清除员工头像（通常占用最大）\n` +
-                        `2. 删除不需要的历史数据\n` +
-                        `3. 清除浏览器缓存\n\n` +
-                        `数据管理 → 清理存储空间`
-                    );
-                }
-            }
-            
-            return {
-                totalSize: totalSize,
-                totalMB: totalMB,
-                usagePercent: usagePercent,
-                breakdown: storeData
-            };
-        } catch (error) {
-            console.error('检查存储空间失败:', error);
-            return null;
-        }
-    }
-
-    // 清理员工头像（释放存储空间）
-    removeAllEmployeePhotos() {
-        if (!confirm(
-            '⚠️ 确认清理员工头像？\n\n' +
-            '这将移除所有员工的头像数据以释放存储空间。\n' +
-            '员工其他信息（姓名、电话等）不会受影响。\n\n' +
-            '您可以稍后重新上传头像。\n\n' +
-            '是否继续？'
-        )) {
-            return;
-        }
-
-        try {
-            let removedCount = 0;
-            let savedSpace = 0;
-            
-            this.employees.forEach(emp => {
-                if (emp.photo) {
-                    savedSpace += new Blob([emp.photo]).size;
-                    delete emp.photo;
-                    removedCount++;
-                }
-            });
-            
-            // 异步保存，不等待（清理操作）
-            this.saveEmployees().then(() => {
-                const savedMB = (savedSpace / (1024 * 1024)).toFixed(2);
-                alert(
-                    `✅ 清理完成！\n\n` +
-                    `已移除 ${removedCount} 个员工头像\n` +
-                    `释放空间：约 ${savedMB}MB\n\n` +
-                    `您可以在员工管理中重新上传头像。`
-                );
-                
-                this.renderEmployeeList();
-                this.renderEmployeeListModal();
-            }).catch((error) => {
-                console.error('保存失败:', error);
-                // 即使保存失败，也更新界面
-                this.renderEmployeeList();
-                this.renderEmployeeListModal();
-            });
-        } catch (error) {
-            console.error('清理失败:', error);
-            alert('❌ 清理失败：' + error.message);
-        }
-    }
-
-    // 显示存储空间信息
-    showStorageInfo() {
-        const info = this.checkStorageSpace();
-        if (!info) {
-            alert('无法获取存储空间信息');
-            return;
-        }
-
-        const employeeMB = ((info.breakdown.employees || 0) / (1024 * 1024)).toFixed(2);
-        const schedulesMB = ((info.breakdown.schedules || 0) / (1024 * 1024)).toFixed(2);
-        const otherMB = ((info.breakdown.other || 0) / (1024 * 1024)).toFixed(2);
-
-        const message = `
-📊 存储空间使用情况
-
-━━━━━━━━━━━━━━━━━━━━━━━
-总使用量：${info.totalMB}MB / 10MB
-使用率：${info.usagePercent}%
-
-详细分类：
-• 员工数据：${employeeMB}MB ${info.breakdown.employees ? '(含头像)' : ''}
-• 排班记录：${schedulesMB}MB
-• 其他数据：${otherMB}MB
-━━━━━━━━━━━━━━━━━━━━━━━
-
-${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 存储空间充足'}
-
-提示：员工头像通常占用最多空间，
-建议定期清理或使用较小的图片。
-        `;
-
-        alert(message);
-
-        // 如果空间紧张，询问是否清理
-        if (info.usagePercent > 80) {
-            if (confirm('是否立即清理员工头像以释放空间？')) {
-                this.removeAllEmployeePhotos();
-            }
-        }
-    }
-
     // ==================== 店铺管理功能结束 ====================
 
     // 检查备份提醒
@@ -2284,25 +2125,6 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
 
         this.setupReportRebateFilterControls();
 
-        // 项目管理事件
-        document.getElementById('addProjectBtn').addEventListener('click', () => {
-            this.openAddProjectModal();
-        });
-
-        document.getElementById('manageProjectsBtn').addEventListener('click', () => {
-            this.openProjectListModal();
-        });
-
-        document.getElementById('addNewProjectBtn').addEventListener('click', () => {
-            this.openAddProjectModal();
-        });
-
-        // 项目表单提交
-        document.getElementById('projectForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveProject();
-        });
-
         // 员工管理事件
         document.getElementById('addEmployeeBtn').addEventListener('click', () => {
             this.openAddEmployeeModal();
@@ -2379,21 +2201,6 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
         if (backupAllStoresBtn) {
             backupAllStoresBtn.addEventListener('click', () => {
                 this.backupAllStoresData();
-            });
-        }
-
-        // 存储空间管理
-        const checkStorageBtn = document.getElementById('checkStorageBtn');
-        if (checkStorageBtn) {
-            checkStorageBtn.addEventListener('click', () => {
-                this.showStorageInfo();
-            });
-        }
-
-        const cleanPhotosBtn = document.getElementById('cleanPhotosBtn');
-        if (cleanPhotosBtn) {
-            cleanPhotosBtn.addEventListener('click', () => {
-                this.removeAllEmployeePhotos();
             });
         }
 
@@ -3886,7 +3693,6 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
                     // 刷新所有界面
                     this.renderTable();
                     this.updateStats();
-                    this.renderProjectList();
                     this.updateProjectSelectors();
                     this.renderEmployeeList();
                     this.updateEmployeeSelectors().catch(err => console.error('更新员工选择器失败:', err));
@@ -3900,7 +3706,6 @@ ${info.usagePercent > 80 ? '⚠️ 存储空间紧张，建议清理！' : '✅ 
                     this.renderReportRebateTable();
                     this.renderEmployeeCommissionSummary();
                     this.renderClientTop20();
-                    this.initializeSalaryManagement();
 
                     // 刷新图表（如果在图表页面）
                     if (this.incomeChart) {
@@ -4296,33 +4101,6 @@ ${photoStatus}`;
         try { localStorage.setItem(this.getStorageKey('projects'), JSON.stringify(this.projects)); } catch (e) {}
     }
 
-    // 渲染项目列表
-    renderProjectList() {
-        const projectList = document.getElementById('projectList');
-        projectList.innerHTML = '';
-
-        if (this.projects.length === 0) {
-            projectList.innerHTML = '<p class="no-projects">暂无项目，请添加项目</p>';
-            return;
-        }
-
-        this.projects.forEach(project => {
-            const projectItem = document.createElement('div');
-            projectItem.className = 'project-item';
-            projectItem.innerHTML = `
-                <div class="project-info">
-                    <h4>${project.name}</h4>
-                    <p>${project.description || '暂无描述'}</p>
-                </div>
-                <div class="project-actions">
-                    <button class="btn btn-edit" onclick="scheduleManager.editProject('${project.id}')">编辑</button>
-                    <button class="btn btn-danger" onclick="scheduleManager.deleteProject('${project.id}')">删除</button>
-                </div>
-            `;
-            projectList.appendChild(projectItem);
-        });
-    }
-
     // 更新项目选择器
     updateProjectSelectors() {
         const selectors = [
@@ -4348,167 +4126,6 @@ ${photoStatus}`;
                 });
             }
         });
-    }
-
-    // 打开添加项目模态框
-    openAddProjectModal() {
-        this.editingProjectId = null;
-        document.getElementById('projectModalTitle').textContent = '添加项目';
-        document.getElementById('projectForm').reset();
-        document.getElementById('projectModal').style.display = 'block';
-    }
-
-    // 打开项目管理列表模态框
-    openProjectListModal() {
-        this.renderProjectListModal();
-        document.getElementById('projectListModal').style.display = 'block';
-    }
-
-    // 渲染项目管理列表模态框
-    renderProjectListModal() {
-        const container = document.getElementById('projectListContainer');
-        container.innerHTML = '';
-
-        if (this.projects.length === 0) {
-            container.innerHTML = '<p class="no-projects">暂无项目，请添加项目</p>';
-            return;
-        }
-
-        this.projects.forEach(project => {
-            const projectItem = document.createElement('div');
-            projectItem.className = 'project-list-item';
-            projectItem.innerHTML = `
-                <div class="project-details">
-                    <h4>${project.name}</h4>
-                    <p>${project.description || '暂无描述'}</p>
-                    <small>创建时间: ${this.formatDateTime(project.createdAt)}</small>
-                </div>
-                <div class="project-actions">
-                    <button class="btn btn-edit" onclick="scheduleManager.editProject('${project.id}')">编辑</button>
-                    <button class="btn btn-danger" onclick="scheduleManager.deleteProject('${project.id}')">删除</button>
-                </div>
-            `;
-            container.appendChild(projectItem);
-        });
-    }
-
-    // 保存项目
-    saveProject() {
-        const formData = {
-            name: document.getElementById('projectNameInput').value.trim(),
-            description: document.getElementById('projectDescription').value.trim()
-        };
-
-        if (!formData.name) {
-            alert('请输入项目名称');
-            return;
-        }
-
-        // 检查项目名称是否已存在（编辑时排除当前项目）
-        const existingProject = this.projects.find(p => 
-            p.name === formData.name && p.id !== this.editingProjectId
-        );
-
-        if (existingProject) {
-            alert('项目名称已存在，请使用其他名称');
-            return;
-        }
-
-        if (this.editingProjectId) {
-            // 编辑现有项目
-            const projectIndex = this.projects.findIndex(p => p.id === this.editingProjectId);
-            if (projectIndex !== -1) {
-                this.projects[projectIndex] = {
-                    ...this.projects[projectIndex],
-                    ...formData,
-                    updatedAt: new Date().toISOString()
-                };
-            }
-        } else {
-            // 添加新项目
-            const newProject = {
-                id: Date.now().toString(),
-                ...formData,
-                createdAt: new Date().toISOString()
-            };
-            this.projects.push(newProject);
-        }
-
-        this.saveProjects();
-        this.renderProjectList();
-        this.updateProjectSelectors();
-        this.updateSalaryProjectSelector(); // 更新薪资管理的项目选择器
-        this.closeProjectModal();
-        this.showSuccessMessage(this.editingProjectId ? '项目修改成功！' : '项目添加成功！');
-    }
-
-    // 编辑项目
-    editProject(id) {
-        const project = this.projects.find(p => p.id === id);
-        if (!project) {
-            alert('未找到要编辑的项目');
-            return;
-        }
-
-        this.editingProjectId = id;
-        document.getElementById('projectModalTitle').textContent = '编辑项目';
-        document.getElementById('projectNameInput').value = project.name;
-        document.getElementById('projectDescription').value = project.description || '';
-        document.getElementById('projectModal').style.display = 'block';
-    }
-
-    // 删除项目
-    deleteProject(id) {
-        const project = this.projects.find(p => p.id === id);
-        if (!project) {
-            alert('未找到要删除的项目');
-            return;
-        }
-
-        // 检查是否有排班记录使用此项目
-        const usedInSchedules = this.schedules.some(schedule => schedule.projectName === project.name);
-        
-        if (usedInSchedules) {
-            alert(`项目"${project.name}"正在被排班记录使用，无法删除。请先修改相关排班记录。`);
-            return;
-        }
-
-        if (confirm(`确定要删除项目"${project.name}"吗？该项目的薪资档位设置也将被删除。`)) {
-            this.projects = this.projects.filter(p => p.id !== id);
-            this.saveProjects();
-            
-            // 删除该项目的薪资档位数据
-            if (this.salaryTiers[id]) {
-                delete this.salaryTiers[id];
-                this.saveSalaryTiersData();
-            }
-            
-            // 如果当前选择的是被删除的项目，清空选择
-            if (this.currentSalaryProject === id) {
-                this.currentSalaryProject = null;
-                this.currentSalaryTier = null;
-                document.getElementById('salaryProjectSelect').value = '';
-                this.renderSalaryTiers();
-                this.renderSalaryEmployeeAssignment();
-            }
-            
-            this.renderProjectList();
-            this.updateProjectSelectors();
-            this.updateSalaryProjectSelector(); // 更新薪资管理的项目选择器
-            this.showSuccessMessage('项目删除成功！');
-        }
-    }
-
-    // 关闭项目模态框
-    closeProjectModal() {
-        document.getElementById('projectModal').style.display = 'none';
-        this.editingProjectId = null;
-        document.getElementById('projectForm').reset();
-    }
-
-    // 关闭项目列表模态框
-    closeProjectListModal() {
-        document.getElementById('projectListModal').style.display = 'none';
     }
 
     // 异步加载员工数据（由 onSnapshot 自动处理）
@@ -8114,10 +7731,9 @@ ${photoStatus}`;
         // 激活选中的tab按钮
         document.querySelector(`[data-tab="${tabName}"]`)?.classList.add('active');
 
-        // 如果切换到管理页面，刷新员工和项目列表
+        // 如果切换到管理页面，刷新员工列表
         if (tabName === 'management') {
             this.renderEmployeeList();
-            this.renderProjectList();
         }
 
         // 如果切换到图表页面，初始化/更新图表
@@ -10535,40 +10151,8 @@ ${photoStatus}`;
     }
 
     // ========================================
-    // 员工薪资管理功能
+    // 旧薪资数据的备份、恢复兼容
     // ========================================
-
-    // 初始化薪资管理
-    initializeSalaryManagement() {
-        this.updateSalaryProjectSelector();
-        this.renderSalaryTiers();
-        
-        // 项目选择事件
-        document.getElementById('salaryProjectSelect').addEventListener('change', (e) => {
-            this.currentSalaryProject = e.target.value;
-            this.currentSalaryTier = null;
-            this.renderSalaryTiers();
-            this.renderSalaryEmployeeAssignment();
-            document.getElementById('addSalaryTierBtn').disabled = !this.currentSalaryProject;
-        });
-        
-        // 添加档位按钮
-        document.getElementById('addSalaryTierBtn').addEventListener('click', () => {
-            this.checkSalaryAuthAndExecute(() => this.openAddSalaryTierModal());
-        });
-        
-        // 薪资档位表单提交
-        document.getElementById('salaryTierForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.saveSalaryTier();
-        });
-        
-        // 权限验证表单提交
-        document.getElementById('salaryAuthForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.verifySalaryPassword();
-        });
-    }
 
     // 加载薪资档位数据（同步版本，初始化用）
     loadSalaryTiers() {
@@ -10598,414 +10182,6 @@ ${photoStatus}`;
     saveSalaryPassword(password) {
         this.salaryPassword = password;
         localStorage.setItem(this.getStorageKey('salaryPassword'), password);
-    }
-
-    // 更新项目选择器
-    updateSalaryProjectSelector() {
-        const select = document.getElementById('salaryProjectSelect');
-        select.innerHTML = '<option value="">请选择项目</option>';
-        
-        this.projects.forEach(project => {
-            const option = document.createElement('option');
-            option.value = project.id;
-            option.textContent = project.name;
-            select.appendChild(option);
-        });
-    }
-
-    // 检查权限并执行操作
-    checkSalaryAuthAndExecute(callback) {
-        if (this.isAuthenticated) {
-            callback();
-        } else {
-            this.pendingSalaryAction = callback;
-            this.openSalaryAuthModal();
-        }
-    }
-
-    // 打开权限验证模态框
-    openSalaryAuthModal() {
-        document.getElementById('salaryAuthModal').style.display = 'block';
-        document.getElementById('salaryAuthPassword').value = '';
-        document.getElementById('salaryAuthPassword').focus();
-    }
-
-    // 关闭权限验证模态框
-    closeSalaryAuthModal() {
-        document.getElementById('salaryAuthModal').style.display = 'none';
-        this.pendingSalaryAction = null;
-    }
-
-    // 验证密码
-    verifySalaryPassword() {
-        const password = document.getElementById('salaryAuthPassword').value;
-        
-        if (password === this.salaryPassword) {
-            this.isAuthenticated = true;
-            this.closeSalaryAuthModal();
-            
-            // 执行待处理的操作
-            if (this.pendingSalaryAction) {
-                this.pendingSalaryAction();
-                this.pendingSalaryAction = null;
-            }
-            
-            // 30分钟后自动登出
-            setTimeout(() => {
-                this.isAuthenticated = false;
-            }, 30 * 60 * 1000);
-            
-            alert('验证成功！权限将在30分钟后过期。');
-        } else {
-            alert('密码错误，请重试！');
-        }
-    }
-
-    // 打开添加档位模态框
-    openAddSalaryTierModal() {
-        if (!this.currentSalaryProject) {
-            alert('请先选择一个项目！');
-            return;
-        }
-        
-        this.editingSalaryTierId = null;
-        document.getElementById('salaryTierModalTitle').textContent = '添加薪资档位';
-        document.getElementById('salaryTierName').value = '';
-        document.getElementById('salaryTierAmount').value = '';
-        document.getElementById('salaryTierDescription').value = '';
-        document.getElementById('salaryTierModal').style.display = 'block';
-    }
-
-    // 打开编辑档位模态框
-    openEditSalaryTierModal(tierId) {
-        const tier = this.getSalaryTierById(tierId);
-        if (!tier) return;
-        
-        this.editingSalaryTierId = tierId;
-        document.getElementById('salaryTierModalTitle').textContent = '编辑薪资档位';
-        document.getElementById('salaryTierName').value = tier.name;
-        document.getElementById('salaryTierAmount').value = tier.amount;
-        document.getElementById('salaryTierDescription').value = tier.description || '';
-        document.getElementById('salaryTierModal').style.display = 'block';
-    }
-
-    // 关闭薪资档位模态框
-    closeSalaryTierModal() {
-        document.getElementById('salaryTierModal').style.display = 'none';
-        this.editingSalaryTierId = null;
-    }
-
-    // 保存薪资档位
-    saveSalaryTier() {
-        const name = document.getElementById('salaryTierName').value.trim();
-        const amount = parseFloat(document.getElementById('salaryTierAmount').value);
-        const description = document.getElementById('salaryTierDescription').value.trim();
-        
-        if (!name || isNaN(amount)) {
-            alert('请填写完整的档位信息！');
-            return;
-        }
-        
-        if (!this.salaryTiers[this.currentSalaryProject]) {
-            this.salaryTiers[this.currentSalaryProject] = [];
-        }
-        
-        if (this.editingSalaryTierId) {
-            // 编辑现有档位
-            const tier = this.getSalaryTierById(this.editingSalaryTierId);
-            if (tier) {
-                tier.name = name;
-                tier.amount = amount;
-                tier.description = description;
-            }
-        } else {
-            // 添加新档位
-            const newTier = {
-                id: Date.now().toString(),
-                projectId: this.currentSalaryProject,
-                name: name,
-                amount: amount,
-                description: description,
-                employees: []
-            };
-            this.salaryTiers[this.currentSalaryProject].push(newTier);
-        }
-        
-        this.saveSalaryTiersData();
-        this.closeSalaryTierModal();
-        this.renderSalaryTiers();
-        
-        alert(this.editingSalaryTierId ? '档位更新成功！' : '档位添加成功！');
-    }
-
-    // 删除薪资档位
-    deleteSalaryTier(tierId) {
-        if (!confirm('确定要删除这个薪资档位吗？档位下的员工分配也将被删除。')) {
-            return;
-        }
-        
-        const projectTiers = this.salaryTiers[this.currentSalaryProject];
-        if (projectTiers) {
-            const index = projectTiers.findIndex(t => t.id === tierId);
-            if (index !== -1) {
-                projectTiers.splice(index, 1);
-                this.saveSalaryTiersData();
-                
-                if (this.currentSalaryTier === tierId) {
-                    this.currentSalaryTier = null;
-                    this.renderSalaryEmployeeAssignment();
-                }
-                
-                this.renderSalaryTiers();
-                alert('档位删除成功！');
-            }
-        }
-    }
-
-    // 根据ID获取档位
-    getSalaryTierById(tierId) {
-        const projectTiers = this.salaryTiers[this.currentSalaryProject];
-        if (projectTiers) {
-            return projectTiers.find(t => t.id === tierId);
-        }
-        return null;
-    }
-
-    // 渲染薪资档位列表
-    renderSalaryTiers() {
-        const container = document.getElementById('salaryTiersContainer');
-        
-        if (!this.currentSalaryProject) {
-            container.innerHTML = '<div class="empty-state"><p>👆 请先选择一个项目</p></div>';
-            return;
-        }
-        
-        const projectTiers = this.salaryTiers[this.currentSalaryProject] || [];
-        
-        if (projectTiers.length === 0) {
-            container.innerHTML = '<div class="empty-state"><p>暂无薪资档位<br>点击上方按钮添加第一个档位</p></div>';
-            return;
-        }
-        
-        container.innerHTML = '';
-        
-        projectTiers.forEach((tier, index) => {
-            const card = document.createElement('div');
-            card.className = `salary-tier-card ${this.currentSalaryTier === tier.id ? 'active' : ''}`;
-            card.onclick = () => this.selectSalaryTier(tier.id);
-            
-            const badge = this.getTierBadgeColor(index);
-            
-            card.innerHTML = `
-                <div class="salary-tier-header">
-                    <div class="salary-tier-name">
-                        <span class="salary-tier-badge" style="background: ${badge}">${tier.name}</span>
-                    </div>
-                    <div class="salary-tier-actions" onclick="event.stopPropagation()">
-                        <button onclick="scheduleManager.checkSalaryAuthAndExecute(() => scheduleManager.openEditSalaryTierModal('${tier.id}'))">✏️ 编辑</button>
-                        <button onclick="scheduleManager.checkSalaryAuthAndExecute(() => scheduleManager.deleteSalaryTier('${tier.id}'))">🗑️ 删除</button>
-                    </div>
-                </div>
-                <div class="salary-tier-amount">¥${tier.amount.toLocaleString()}</div>
-                ${tier.description ? `<div class="salary-tier-description">${tier.description}</div>` : ''}
-                <div class="salary-tier-employee-count">👥 已分配 ${tier.employees.length} 名员工</div>
-            `;
-            
-            container.appendChild(card);
-        });
-    }
-
-    // 获取档位徽章颜色
-    getTierBadgeColor(index) {
-        const colors = ['#FFD700', '#C0C0C0', '#CD7F32', '#667eea', '#764ba2'];
-        return colors[index % colors.length];
-    }
-
-    // 选择档位
-    selectSalaryTier(tierId) {
-        this.currentSalaryTier = tierId;
-        this.renderSalaryTiers();
-        this.renderSalaryEmployeeAssignment();
-    }
-
-    // 渲染员工分配区域
-    renderSalaryEmployeeAssignment() {
-        const container = document.getElementById('salaryEmployeeAssignment');
-        
-        if (!this.currentSalaryTier) {
-            container.innerHTML = '<div class="empty-state"><p>👈 请先选择一个薪资档位</p></div>';
-            return;
-        }
-        
-        const tier = this.getSalaryTierById(this.currentSalaryTier);
-        if (!tier) {
-            container.innerHTML = '<div class="empty-state"><p>❌ 档位数据错误</p></div>';
-            return;
-        }
-        
-        const project = this.projects.find(p => p.id === this.currentSalaryProject);
-        
-        container.innerHTML = `
-            <div class="salary-assignment-header">
-                <div class="salary-assignment-title">${tier.name}</div>
-                <div class="salary-assignment-info">
-                    <span>项目：${project ? project.name : '未知'}</span>
-                    <span>薪资：¥${tier.amount.toLocaleString()}</span>
-                </div>
-            </div>
-            
-            <div class="salary-employee-list" id="salaryEmployeeList"></div>
-            
-            <button class="salary-add-employee-btn" onclick="scheduleManager.checkSalaryAuthAndExecute(() => scheduleManager.showAddEmployeeSection())">
-                ➕ 添加员工到此档位
-            </button>
-            
-            <div id="addEmployeeSection" style="display: none;"></div>
-        `;
-        
-        this.renderAssignedEmployees(tier);
-    }
-
-    // 渲染已分配的员工
-    renderAssignedEmployees(tier) {
-        const list = document.getElementById('salaryEmployeeList');
-        
-        if (tier.employees.length === 0) {
-            list.innerHTML = '<div class="empty-state"><p>暂无员工<br>点击下方按钮添加员工</p></div>';
-            return;
-        }
-        
-        list.innerHTML = '';
-        
-        tier.employees.forEach(employeeId => {
-            const employee = this.employees.find(e => e.id === employeeId);
-            if (!employee) return;
-            
-            const item = document.createElement('div');
-            item.className = 'salary-employee-item';
-            
-            item.innerHTML = `
-                <div class="salary-employee-info">
-                    ${employee.photo ? 
-                        `<img src="${employee.photo}" alt="${employee.name}" class="salary-employee-avatar">` :
-                        `<div class="salary-employee-avatar-placeholder">${employee.name.charAt(0)}</div>`
-                    }
-                    <div class="salary-employee-details">
-                        <div class="salary-employee-name">${employee.name}</div>
-                        <div class="salary-employee-meta">
-                            ${employee.phone || '未设置电话'} • 
-                            ${employee.hireDate ? '入职：' + employee.hireDate : '未设置入职日期'}
-                        </div>
-                    </div>
-                </div>
-                <button class="salary-employee-remove" onclick="scheduleManager.checkSalaryAuthAndExecute(() => scheduleManager.removeEmployeeFromTier('${employee.id}'))">
-                    移除
-                </button>
-            `;
-            
-            list.appendChild(item);
-        });
-    }
-
-    // 显示添加员工区域
-    showAddEmployeeSection() {
-        const section = document.getElementById('addEmployeeSection');
-        section.style.display = 'block';
-        
-        const tier = this.getSalaryTierById(this.currentSalaryTier);
-        const availableEmployees = this.getAvailableEmployees(tier);
-        
-        section.innerHTML = `
-            <div class="salary-add-employee-section">
-                <h3>选择要添加的员工</h3>
-                <div class="salary-available-employees" id="availableEmployeesList">
-                    ${availableEmployees.length === 0 ? 
-                        '<div class="empty-state"><p>所有员工都已分配到档位</p></div>' :
-                        ''
-                    }
-                </div>
-                <button class="btn btn-secondary" style="margin-top: 10px; width: 100%;" onclick="scheduleManager.hideAddEmployeeSection()">
-                    取消
-                </button>
-            </div>
-        `;
-        
-        const employeesList = document.getElementById('availableEmployeesList');
-        
-        availableEmployees.forEach(employee => {
-            const item = document.createElement('div');
-            item.className = 'salary-available-employee-item';
-            item.onclick = () => this.addEmployeeToTier(employee.id);
-            
-            item.innerHTML = `
-                ${employee.photo ? 
-                    `<img src="${employee.photo}" alt="${employee.name}" class="salary-employee-avatar">` :
-                    `<div class="salary-employee-avatar-placeholder">${employee.name.charAt(0)}</div>`
-                }
-                <div class="salary-employee-name">${employee.name}</div>
-            `;
-            
-            employeesList.appendChild(item);
-        });
-    }
-
-    // 隐藏添加员工区域
-    hideAddEmployeeSection() {
-        document.getElementById('addEmployeeSection').style.display = 'none';
-    }
-
-    // 获取可用的员工（未在当前项目的任何档位中的员工）
-    getAvailableEmployees(currentTier) {
-        const projectTiers = this.salaryTiers[this.currentSalaryProject] || [];
-        const assignedEmployeeIds = new Set();
-        
-        // 收集当前项目所有档位中已分配的员工
-        projectTiers.forEach(tier => {
-            tier.employees.forEach(empId => assignedEmployeeIds.add(empId));
-        });
-        
-        // 返回未分配的员工
-        return this.employees.filter(emp => !assignedEmployeeIds.has(emp.id));
-    }
-
-    // 添加员工到档位
-    addEmployeeToTier(employeeId) {
-        const tier = this.getSalaryTierById(this.currentSalaryTier);
-        if (!tier) return;
-        
-        if (tier.employees.includes(employeeId)) {
-            alert('该员工已在此档位中！');
-            return;
-        }
-        
-        tier.employees.push(employeeId);
-        this.saveSalaryTiersData();
-        this.hideAddEmployeeSection();
-        this.renderSalaryEmployeeAssignment();
-        this.renderSalaryTiers(); // 更新档位卡片的员工数量
-        
-        const employee = this.employees.find(e => e.id === employeeId);
-        alert(`已将 ${employee.name} 添加到此档位！`);
-    }
-
-    // 从档位移除员工
-    removeEmployeeFromTier(employeeId) {
-        const tier = this.getSalaryTierById(this.currentSalaryTier);
-        if (!tier) return;
-        
-        const employee = this.employees.find(e => e.id === employeeId);
-        if (!confirm(`确定要将 ${employee.name} 从此档位移除吗？`)) {
-            return;
-        }
-        
-        const index = tier.employees.indexOf(employeeId);
-        if (index !== -1) {
-            tier.employees.splice(index, 1);
-            this.saveSalaryTiersData();
-            this.renderSalaryEmployeeAssignment();
-            this.renderSalaryTiers(); // 更新档位卡片的员工数量
-            alert('员工已移除！');
-        }
     }
 
     // ==================== 接龙数据转换工具 ====================
