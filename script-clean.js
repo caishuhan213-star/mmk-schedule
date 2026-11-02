@@ -4300,7 +4300,8 @@ ${photoStatus}`;
         if (!container) return;
         container.replaceChildren();
         const query = (this._employeeSearchQuery || '').trim().toLowerCase();
-        const employees = this.employees.filter(employee => `${employee.name} ${employee.phone || ''}`.toLowerCase().includes(query));
+        // Shared roster order follows entry order; reverse only the displayed copy.
+        const employees = this.employees.filter(employee => `${employee.name} ${employee.phone || ''}`.toLowerCase().includes(query)).reverse();
         if (!employees.length) {
             const empty = document.createElement('p');
             empty.className = 'employee-directory-empty';
