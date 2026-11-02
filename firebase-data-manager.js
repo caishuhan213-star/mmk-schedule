@@ -565,7 +565,28 @@ class FirebaseDataManager {
         return items.length > 0 ? items : {};
     }
 
-    async saveJlPriceTable(rows) {
+    async saveJlPriceTable(rows, options = {}) {
+        // Compare against the version the editor saw. A transaction also keeps
+        // profile edits and name/price changes together when both are supplied.
+        if (options.expectedRows) {
+            if (!this._canOperate() || !this._canWrite('jlPriceTable')) throw new Error('请登录后再保存');
+            const ref = this._settingsDocRef('jlPriceTable');
+            return this._getFirestore().runTransaction(async transaction => {
+                const doc = await transaction.get(ref);
+                const actual = EmployeeRoster.normalize(doc.exists ? (doc.data().rows || []) : []);
+                const expected = EmployeeRoster.normalize(options.expectedRows);
+                if (this._stableStringify(actual) !== this._stableStringify(expected)) {
+                    const error = new Error('价格表已在其他设备更新，请查看最新内容后重新保存。');
+                    error.latestRows = actual;
+                    throw error;
+                }
+                transaction.set(ref, { rows, updatedAt: Date.now(), userId: this._currentUser.uid }, { merge: true });
+                if (options.profile) {
+                    const profileRef = this._collectionRef(options.storeId, 'employees').doc(String(options.profile.id));
+                    transaction.set(profileRef, options.profile, { merge: true });
+                }
+            });
+        }
         if (!this._canWrite('jlPriceTable')) return;
 
         if (!this._canOperate()) {
@@ -609,7 +630,7 @@ class FirebaseDataManager {
         }
     }
 
-    subscribeToJlPriceTable(callback) {
+    subscribeToJlPriceTable(callback, onError) {
         const ref = this._settingsDocRef('jlPriceTable');
         if (!ref || !this._currentUser) {
             console.warn('FirebaseDataManager: Firestore 或用户未就绪，跳过订阅接龙价格表');
@@ -618,13 +639,13 @@ class FirebaseDataManager {
 
         this.unsubscribeJlPriceTable();
 
-        this._jlPriceTableUnsubscribe = ref.onSnapshot((doc) => {
+        this._jlPriceTableUnsubscribe = ref.onSnapshot({ includeMetadataChanges: true }, (doc) => {
             const exists = typeof doc.exists === 'function' ? doc.exists() : doc.exists;
             const data = exists ? (doc.data() || {}) : {};
             const rows = Array.isArray(data.rows) ? data.rows : [];
 
             try {
-                callback(rows);
+                callback(rows, { exists, fromCache: doc.metadata.fromCache, pending: doc.metadata.hasPendingWrites });
             } catch (error) {
                 console.error('FirebaseDataManager: 接龙价格表回调失败:', error);
             }
@@ -632,6 +653,7 @@ class FirebaseDataManager {
             console.log(`FirebaseDataManager: onSnapshot jlPriceTable → ${rows.length} 条记录`);
         }, (error) => {
             console.error('FirebaseDataManager: 监听接龙价格表出错:', error);
+            if (onError) onError(error);
         });
     }
 
@@ -662,7 +684,7 @@ class FirebaseDataManager {
                 const ref = this._collectionRef(storeId, collectionName);
                 if (!ref) continue;
 
-                const unsubscribe = ref.onSnapshot((snapshot) => {
+                const unsubscribe = ref.onSnapshot({ includeMetadataChanges: collectionName === 'employees' }, (snapshot) => {
                     const items = this._updateCollectionStateFromSnapshot(storeId, collectionName, snapshot);
 
                     // 导入模式下跳过 onSnapshot 回调，防止旧快照覆盖内存数据
@@ -679,7 +701,7 @@ class FirebaseDataManager {
                             callback(items.length > 0 ? items : {});
                         }
                     } else {
-                        callback(items);
+                        callback(items, { fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites });
                     }
 
                     console.log(`FirebaseDataManager: onSnapshot ${collectionName} → ${items.length} 条记录`);

@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=14">
+    <link rel="stylesheet" href="employee-directory.css?v=1">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -436,12 +437,21 @@
 
                 <!-- 员工信息管理区域 -->
                 <section class="employee-section">
-                    <h2>员工信息管理</h2>
-                    <div class="employee-controls">
-                        <button id="addEmployeeBtn" class="btn btn-primary">添加员工</button>
-                        <button id="manageEmployeesBtn" class="btn btn-secondary">管理员工</button>
+                    <div class="employee-directory-header">
+                        <div>
+                            <h2>员工信息管理 <span id="employeeRosterCount" class="employee-count">0 位员工</span></h2>
+                            <p id="employeeSyncStatus" role="status">正在连接云端名单…</p>
+                        </div>
+                        <div class="employee-directory-toolbar">
+                            <button id="employeePriceShortcut" class="btn btn-secondary">管理价格表</button>
+                            <button id="addEmployeeBtn" class="btn btn-primary">＋ 添加员工</button>
+                        </div>
                     </div>
-                    <div class="employee-list" id="employeeList">
+                    <div class="employee-directory-filters">
+                        <input id="employeeSearch" type="search" placeholder="搜索员工姓名或电话" aria-label="搜索员工姓名或电话">
+                        <button id="manageEmployeesBtn" class="btn btn-secondary">展开列表</button>
+                    </div>
+                    <div class="employee-directory" id="employeeList">
                         <!-- 员工列表将通过JavaScript动态填充 -->
                     </div>
                 </section>
@@ -1637,6 +1647,7 @@
                             <span class="jl-modal-close" id="jlClosePriceModal">&times;</span>
                         </div>
                         <div class="jl-modal-body">
+                            <p class="employee-form-hint">员工姓名与所有店铺名单同步，修改后自动保存。价格留空表示待设置；移除员工会保留已有资料与历史排班。</p>
                             <div class="jl-price-actions">
                                 <button id="jlAddPriceRow" class="btn btn-primary">➕ 添加员工</button>
                                 <button id="jlAddGrade" class="btn btn-info">➕ 新增等级</button>
@@ -1774,6 +1785,7 @@
                 <span class="close" onclick="scheduleManager.closeEmployeeModal()">&times;</span>
             </div>
             <form id="employeeForm" class="form">
+                <p class="employee-form-hint">姓名与价格表在所有店铺同步；联系方式、头像和备注保留在当前店铺。新员工的价格请在价格表中填写。</p>
                 <div class="form-group">
                     <label for="employeeNameInput">员工姓名</label>
                     <input type="text" id="employeeNameInput" required>
@@ -1832,7 +1844,8 @@
                     <h3>员工列表</h3>
                     <button id="addNewEmployeeBtn" class="btn btn-primary">添加新员工</button>
                 </div>
-                <div class="employee-list-container" id="employeeListContainer">
+                <input id="employeeModalSearch" type="search" placeholder="搜索员工姓名或电话" aria-label="搜索完整员工列表">
+                <div class="employee-directory" id="employeeListContainer">
                     <!-- 员工列表将通过JavaScript动态填充 -->
                 </div>
             </div>
@@ -2077,9 +2090,10 @@
         });
     </script>
     <script src="firebase-manager.js?v=6"></script>
-    <script src="firebase-data-manager.js?v=9"></script>
+    <script src="employee-roster.js?v=1"></script>
+    <script src="firebase-data-manager.js?v=10"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=32"></script>
+    <script src="script-clean.js?v=33"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>
