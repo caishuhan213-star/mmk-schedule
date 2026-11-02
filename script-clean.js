@@ -1020,7 +1020,8 @@ class ScheduleManager {
         const subscribedStoreId = this.currentStoreId;
 
         // 通用处理：Firestore 空 → 检查 localStorage 是否有数据需要迁移
-        const handleSnapshot = (collectionName, data, fieldName, saveFn, renderFns) => {
+        const handleSnapshot = (collectionName, data, fieldName, saveFn, renderFns, metadata = {}) => {
+            if (subscribedStoreId !== this.currentStoreId || metadata.fromCache || metadata.pending) return;
             if (!migrated[collectionName] && data.length === 0) {
                 migrated[collectionName] = true;
                 // 检查 localStorage 中是否有数据
@@ -1039,14 +1040,16 @@ class ScheduleManager {
             }
             migrated[collectionName] = true;
             this[fieldName] = data;
+            try { localStorage.setItem(`store_${subscribedStoreId}_${collectionName}`, JSON.stringify(data)); }
+            catch (error) { console.warn(`缓存 ${collectionName} 失败:`, error); }
             renderFns.forEach(fn => {
                 try { fn.call(this); } catch (e) { console.error(`渲染 ${collectionName} 出错:`, e); }
             });
         };
 
         return {
-            schedules: (data) => handleSnapshot('schedules', data, 'schedules',
-                this.saveSchedules, [this.renderTableWithCurrentFilter, this.updateStats, this.renderEmployeeCommissionSummary]),
+            schedules: (data, metadata) => handleSnapshot('schedules', data, 'schedules',
+                this.saveSchedules, [this.renderTableWithCurrentFilter, this.updateStats, this.renderEmployeeCommissionSummary], metadata),
             employees: (data, metadata = {}) => {
                 if (subscribedStoreId !== this.currentStoreId || metadata.pending) return;
                 this._employeeProfilesReady = !metadata.fromCache;
@@ -1067,17 +1070,18 @@ class ScheduleManager {
                 this._refreshEmployeeRoster();
                 this._cacheEmployeeProfiles();
             },
-            projects: (data) => handleSnapshot('projects', data, 'projects',
-                this.saveProjects, [this.updateProjectSelectors]),
-            attendanceFees: (data) => handleSnapshot('attendanceFees', data, 'attendanceFees',
-                this.saveAttendanceFees, [this.renderAttendanceFeeTable]),
-            interviewFees: (data) => handleSnapshot('interviewFees', data, 'interviewFees',
-                this.saveInterviewFees, [this.renderInterviewFeeTable]),
-            operatingCosts: (data) => handleSnapshot('operatingCosts', data, 'operatingCosts',
-                this.saveOperatingCosts, [this.renderOperatingCostTable, this.updateOperatingCostStats]),
-            reportRebates: (data) => handleSnapshot('reportRebates', data, 'reportRebates',
-                this.saveReportRebates, [this.renderReportRebateTable]),
-            salaryTiers: (data) => {
+            projects: (data, metadata) => handleSnapshot('projects', data, 'projects',
+                this.saveProjects, [this.updateProjectSelectors], metadata),
+            attendanceFees: (data, metadata) => handleSnapshot('attendanceFees', data, 'attendanceFees',
+                this.saveAttendanceFees, [this.renderAttendanceFeeTable], metadata),
+            interviewFees: (data, metadata) => handleSnapshot('interviewFees', data, 'interviewFees',
+                this.saveInterviewFees, [this.renderInterviewFeeTable], metadata),
+            operatingCosts: (data, metadata) => handleSnapshot('operatingCosts', data, 'operatingCosts',
+                this.saveOperatingCosts, [this.renderOperatingCostTable, this.updateOperatingCostStats], metadata),
+            reportRebates: (data, metadata) => handleSnapshot('reportRebates', data, 'reportRebates',
+                this.saveReportRebates, [this.renderReportRebateTable], metadata),
+            salaryTiers: (data, metadata = {}) => {
+                if (subscribedStoreId !== this.currentStoreId || metadata.fromCache || metadata.pending) return;
                 if (!migrated['salaryTiers'] && (!data || (Array.isArray(data) && data.length === 0) || (typeof data === 'object' && Object.keys(data).length === 0))) {
                     migrated['salaryTiers'] = true;
                     const local = this.salaryTiers;

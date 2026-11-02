@@ -5,7 +5,10 @@
 class FirebaseDataManager {
     constructor() {
         this.teamId = 'shared';
-        this.unsubscribers = [];
+        this._storeSubscriptions = new Map();
+        this._activeStoreId = null;
+        this._inactiveStoreTtlMs = 2 * 60 * 1000;
+        this._collectionReads = new Map();
         this._readyCallbacks = [];
         this._isReady = false;
         this._currentUser = null;
@@ -37,6 +40,13 @@ class FirebaseDataManager {
             // 必须等 Firebase App 初始化完成（firebase.apps.length > 0）后才能调用 firebase.auth()
             if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
                 firebase.auth().onAuthStateChanged((user) => {
+                    if (this._currentUser?.uid !== user?.uid) {
+                        this.unsubscribeAll();
+                        this.unsubscribeJlPriceTable();
+                        this._collectionStates.clear();
+                        this._collectionReads.clear();
+                        this._isReady = false;
+                    }
                     this._currentUser = user;
                     if (user && !this._isReady) {
                         this._isReady = true;
@@ -125,6 +135,8 @@ class FirebaseDataManager {
                 timer: null,
                 pendingPayload: null,
                 waiters: [],
+                priming: null,
+                revision: 0,
             });
         }
         return this._collectionStates.get(key);
@@ -147,13 +159,21 @@ class FirebaseDataManager {
 
     async _primeCollectionState(ref, state) {
         if (state.ready) return;
-
-        const snapshot = await ref.get();
-        state.docs = new Map();
-        snapshot.forEach(doc => {
-            state.docs.set(doc.id, this._stripInternalFields(doc.data()));
-        });
-        state.ready = true;
+        if (!state.priming) {
+            const revision = state.revision;
+            state.priming = (async () => {
+                const snapshot = await ref.get({ source: 'server' });
+                // A newer listener result is already the authoritative baseline.
+                if (state.revision !== revision && state.ready) return;
+                state.docs = new Map();
+                snapshot.forEach(doc => {
+                    state.docs.set(doc.id, this._stripInternalFields(doc.data()));
+                });
+                state.ready = true;
+                state.revision++;
+            })().finally(() => { state.priming = null; });
+        }
+        return state.priming;
     }
 
     _updateCollectionStateFromSnapshot(storeId, collectionName, snapshot) {
@@ -167,8 +187,15 @@ class FirebaseDataManager {
             items.push(item);
         });
 
-        state.docs = docs;
-        state.ready = true;
+        // Partial/offline cache results must never be used as a bulk-write
+        // baseline, or trigger migration of stale local records into the cloud.
+        if (!snapshot.metadata?.fromCache && !snapshot.metadata?.hasPendingWrites) {
+            state.docs = docs;
+            state.ready = true;
+            state.revision++;
+        } else if (snapshot.metadata?.fromCache) {
+            state.ready = false;
+        }
         return items;
     }
 
@@ -462,14 +489,27 @@ class FirebaseDataManager {
         const ref = this._collectionRef(storeId, collectionName);
         if (!ref) return [];
 
+        const state = this._getCollectionState(storeId, collectionName);
+        const session = this._storeSubscriptions.get(storeId);
+        if (state.ready && session?.listeners.has(collectionName)) {
+            return this._copyCollectionItems([...state.docs.values()]);
+        }
+        const key = this._collectionKey(storeId, collectionName);
+
         try {
-            const snapshot = await ref.get();
-            const items = [];
-            snapshot.forEach(doc => {
-                items.push(this._stripInternalFields(doc.data()));
-            });
+            if (!this._collectionReads.has(key)) {
+                const request = ref.get().then(snapshot => {
+                    const items = [];
+                    snapshot.forEach(doc => items.push(this._stripInternalFields(doc.data())));
+                    return items;
+                }).finally(() => {
+                    if (this._collectionReads.get(key) === request) this._collectionReads.delete(key);
+                });
+                this._collectionReads.set(key, request);
+            }
+            const items = await this._collectionReads.get(key);
             console.log(`FirebaseDataManager: 从 Firestore 加载了 ${items.length} 条 ${collectionName}`);
-            return items;
+            return this._copyCollectionItems(items);
         } catch (error) {
             console.error(`FirebaseDataManager: 加载 ${collectionName} 失败:`, error);
             return [];
@@ -658,14 +698,44 @@ class FirebaseDataManager {
     }
 
     // ====== 实时监听 ======
+    _copyCollectionItems(items) {
+        // View code may edit records in place. Never expose the diff baseline.
+        return typeof structuredClone === 'function' ? structuredClone(items) : JSON.parse(JSON.stringify(items));
+    }
+
+    _deliverStoreSnapshot(storeId, session, collectionName) {
+        if (this._storeSubscriptions.get(storeId) !== session || this._activeStoreId !== storeId
+            || session.uid !== this._currentUser?.uid || this._importing) return;
+        const snapshot = session.snapshots.get(collectionName);
+        const callback = session.callbacks[collectionName];
+        if (!snapshot || !callback || snapshot.metadata.pending) return;
+        // Keep existing UI/cache during offline/partial snapshots. Employees
+        // still receive metadata so their cloud-save readiness can be disabled.
+        if (snapshot.metadata.fromCache && collectionName !== 'employees') return;
+        const items = this._copyCollectionItems(snapshot.items);
+        const data = collectionName === 'salaryTiers'
+            ? (items.length === 1 && items[0].id === 'salaryTiers' && items[0].data ? items[0].data : items.length ? items : {})
+            : items;
+        try { callback(data, { ...snapshot.metadata }); }
+        catch (error) { console.error(`FirebaseDataManager: ${collectionName} 回调失败:`, error); }
+    }
+
+    _closeStoreSubscription(storeId) {
+        const session = this._storeSubscriptions.get(storeId);
+        if (!session) return;
+        this._storeSubscriptions.delete(storeId); // invalidate queued callbacks first
+        clearTimeout(session.timer);
+        for (const [name, unsubscribe] of session.listeners) {
+            try { unsubscribe(); } catch (_) {}
+            this._getCollectionState(storeId, name).ready = false;
+        }
+    }
+
     subscribeToStore(storeId, callbacks) {
         if (!storeId) {
             console.warn('FirebaseDataManager: 无 storeId，跳过订阅');
             return;
         }
-
-        // 先取消旧的订阅
-        this.unsubscribeAll();
 
         const db = this._getFirestore();
         if (!db || !this._currentUser) {
@@ -673,43 +743,70 @@ class FirebaseDataManager {
             return;
         }
 
-        console.log(`FirebaseDataManager: 开始订阅店铺 ${storeId} 的所有集合`);
+        const previousId = this._activeStoreId;
+        const previous = this._storeSubscriptions.get(previousId);
+        if (previous && previousId !== storeId) {
+            clearTimeout(previous.timer);
+            previous.timer = setTimeout(() => {
+                if (this._activeStoreId !== previousId) this._closeStoreSubscription(previousId);
+            }, this._inactiveStoreTtlMs);
+        }
+        this._activeStoreId = storeId;
+        let session = this._storeSubscriptions.get(storeId);
+        if (session && session.uid !== this._currentUser.uid) {
+            this._closeStoreSubscription(storeId);
+            session = null;
+        }
+        if (!session) session = { uid: this._currentUser.uid, callbacks, listeners: new Map(), snapshots: new Map(), timer: null };
+        clearTimeout(session.timer);
+        session.timer = null;
+        session.callbacks = callbacks;
+        this._storeSubscriptions.delete(storeId);
+        this._storeSubscriptions.set(storeId, session);
+        // At most the active store plus one recently visited store stays warm.
+        while (this._storeSubscriptions.size > 2) this._closeStoreSubscription(this._storeSubscriptions.keys().next().value);
+
+        for (const [name, unsubscribe] of session.listeners) {
+            if (!callbacks[name]) {
+                unsubscribe(); session.listeners.delete(name); session.snapshots.delete(name);
+                this._getCollectionState(storeId, name).ready = false;
+            }
+        }
 
         const collections = Object.keys(callbacks);
         for (const collectionName of collections) {
             const callback = callbacks[collectionName];
             if (!callback) continue;
+            if (session.listeners.has(collectionName)) {
+                this._deliverStoreSnapshot(storeId, session, collectionName);
+                continue;
+            }
 
             try {
                 const ref = this._collectionRef(storeId, collectionName);
                 if (!ref) continue;
 
-                const unsubscribe = ref.onSnapshot({ includeMetadataChanges: collectionName === 'employees' }, (snapshot) => {
+                let listening = true;
+                const unsubscribe = ref.onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
+                    if (!listening || this._storeSubscriptions.get(storeId) !== session) return;
                     const items = this._updateCollectionStateFromSnapshot(storeId, collectionName, snapshot);
-
-                    // 导入模式下跳过 onSnapshot 回调，防止旧快照覆盖内存数据
-                    if (this._importing) {
-                        console.log(`FirebaseDataManager: 导入模式，跳过 onSnapshot ${collectionName}`);
-                        return;
-                    }
-
-                    // salaryTiers 特殊处理：还原对象格式
-                    if (collectionName === 'salaryTiers') {
-                        if (items.length === 1 && items[0].id === 'salaryTiers' && items[0].data) {
-                            callback(items[0].data);
-                        } else {
-                            callback(items.length > 0 ? items : {});
-                        }
-                    } else {
-                        callback(items, { fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites });
-                    }
+                    session.snapshots.set(collectionName, { items, metadata: {
+                        fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites
+                    } });
+                    this._deliverStoreSnapshot(storeId, session, collectionName);
 
                     console.log(`FirebaseDataManager: onSnapshot ${collectionName} → ${items.length} 条记录`);
                 }, (error) => {
+                    if (!listening || this._storeSubscriptions.get(storeId) !== session) return;
+                    listening = false;
+                    session.listeners.delete(collectionName);
+                    session.snapshots.delete(collectionName);
+                    this._getCollectionState(storeId, collectionName).ready = false;
                     console.error(`FirebaseDataManager: 监听 ${collectionName} 出错:`, error);
                 });
 
-                this.unsubscribers.push(unsubscribe);
+                if (listening) session.listeners.set(collectionName, () => { listening = false; unsubscribe(); });
+                else unsubscribe();
             } catch (error) {
                 console.error(`FirebaseDataManager: 订阅 ${collectionName} 失败:`, error);
             }
@@ -720,10 +817,8 @@ class FirebaseDataManager {
 
     // 取消所有订阅
     unsubscribeAll() {
-        this.unsubscribers.forEach(unsub => {
-            try { unsub(); } catch (e) {}
-        });
-        this.unsubscribers = [];
+        for (const storeId of this._storeSubscriptions.keys()) this._closeStoreSubscription(storeId);
+        this._activeStoreId = null;
     }
 
     unsubscribeJlPriceTable() {

@@ -53,7 +53,8 @@ class StoreCenterManager {
             this._unsubscribeStores();
         }
 
-        this._unsubscribeStores = db.collection('team/shared/stores').onSnapshot((snapshot) => {
+        this._unsubscribeStores = db.collection('team/shared/stores').onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
+            if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
             const stores = [];
             snapshot.forEach(doc => {
                 const data = doc.data();

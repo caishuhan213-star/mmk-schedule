@@ -73,6 +73,15 @@ class FirebaseManager {
             
             // 获取Firestore和Auth实例（v9兼容模式）
             this.firestore = firebase.firestore();
+            // Start before any queries. The SDK shares query execution between
+            // tabs and can resume recent listeners after a refresh.
+            try {
+                await this.firestore.enablePersistence({ synchronizeTabs: true });
+                console.log('✅ Firestore 已启用跨标签页持久缓存');
+            } catch (cacheError) {
+                // Private browsing / unsupported storage must not block login.
+                console.warn('Firestore 持久缓存不可用，继续使用内存缓存:', cacheError.code);
+            }
             this.auth = firebase.auth();
 
             // 明确使用本地持久登录，避免邮箱密码账号在页面空闲或刷新后回到未登录态

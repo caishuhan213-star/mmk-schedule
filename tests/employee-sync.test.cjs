@@ -105,6 +105,24 @@ test('late callbacks from a previous store cannot replace current-store employee
     manager._refreshEmployeeRoster(); assert.equal(manager.employees[0].phone, 'current');
 });
 
+test('cached empty collections cannot migrate old local schedules or replace another store', () => {
+    const { manager, cache } = app();
+    let writes = 0;
+    manager.schedules = [{ id: 'local-schedule' }];
+    manager.saveSchedules = () => { writes++; };
+    manager.renderTableWithCurrentFilter = manager.updateStats = manager.renderEmployeeCommissionSummary = () => {};
+    const callback = manager._getSubscribeCallbacks().schedules;
+    callback([], { fromCache: true });
+    callback([], { fromCache: false, pending: true });
+    assert.equal(writes, 0); assert.equal(manager.schedules[0].id, 'local-schedule');
+    callback([{ id: 'server-schedule' }], { fromCache: false });
+    assert.equal(manager.schedules[0].id, 'server-schedule');
+    assert.deepEqual(JSON.parse(cache.get('store_a_schedules')), [{ id: 'server-schedule' }]);
+    manager.currentStoreId = 'b'; manager.schedules = [{ id: 'store-b' }];
+    callback([{ id: 'late-store-a' }], { fromCache: false });
+    assert.equal(manager.schedules[0].id, 'store-b');
+});
+
 test('failed save does not change names, price cache, or profile data and releases saving controls', async () => {
     const { manager, alerts, cache } = app();
     manager.dbManager.saveJlPriceTable = async () => { throw new Error('offline'); };
