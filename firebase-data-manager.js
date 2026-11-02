@@ -43,6 +43,12 @@ class FirebaseDataManager {
                     if (this._currentUser?.uid !== user?.uid) {
                         this.unsubscribeAll();
                         this.unsubscribeJlPriceTable();
+                        for (const state of this._collectionStates.values()) {
+                            clearTimeout(state.timer);
+                            state.pendingPayload = null;
+                            const error = new Error('登录状态已变化，本次排队保存已取消，请重新登录后保存。');
+                            state.waiters.splice(0).forEach(waiter => waiter.reject(error));
+                        }
                         this._collectionStates.clear();
                         this._collectionReads.clear();
                         this._isReady = false;

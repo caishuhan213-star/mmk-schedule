@@ -102,6 +102,15 @@ test('sign-out and account changes discard all warm sessions and pending timers'
     assert.equal(h.manager._storeSubscriptions.size, 0);
 });
 
+test('sign-out rejects queued saves instead of leaving their callers waiting forever', async () => {
+    const h = harness();
+    const pending = h.manager._scheduleCollectionSave('schedules', 'a', new Map());
+    const rejected = assert.rejects(pending, /登录状态已变化/);
+    h.auth(null);
+    await rejected;
+    assert.equal(h.timers.size, 0);
+});
+
 test('cache-only and pending snapshots cannot become authoritative or replace schedules', () => {
     const h = harness(); let schedules, employeeMetadata;
     h.manager.subscribeToStore('a', { schedules: rows => { schedules = rows; }, employees: (_, metadata) => { employeeMetadata = metadata; } });
