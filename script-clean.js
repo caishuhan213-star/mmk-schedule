@@ -961,6 +961,7 @@ class ScheduleManager {
             if (typeof original !== 'function') return;
 
             this[methodName] = (...args) => {
+                if (this._recordSavePending) return false;
                 // 员工被授权的方法直接放行
                 if (this.isStaffReadOnly && staffAllowedMethods.has(methodName)) {
                     return original.apply(this, args);
@@ -1412,7 +1413,7 @@ class ScheduleManager {
 
     // 切换店铺
     switchStore(storeId) {
-        if (this._jlPriceWritePending) { alert('员工信息正在保存，请稍后切换店铺'); return; }
+        if (this._jlPriceWritePending || this._recordSavePending) { this.updateStoreSelector(); alert('数据正在保存，请稍后切换店铺'); return; }
         const stores = this.loadStores();
         const store = stores.find(s => s.id === storeId);
         
@@ -2471,9 +2472,139 @@ class ScheduleManager {
     }
 
     // 添加排班记录
-    addSchedule() {
+
+    // A visible success always follows acknowledgement from Firestore.
+    _setRecordSaveFeedback(formId, message, state = 'saving') {
+        const host = document.getElementById(formId) || document.body;
+        const id = `${formId || 'record'}SaveFeedback`;
+        let feedback = document.getElementById(id);
+        if (!feedback) {
+            feedback = document.createElement('div');
+            feedback.id = id;
+            feedback.className = 'save-feedback';
+            if (host === document.body) feedback.classList.add('save-feedback-floating');
+            host.appendChild(feedback);
+            if (formId) host.addEventListener('input', () => {
+                if (feedback.dataset.state === 'success') feedback.hidden = true;
+            });
+        }
+        feedback.textContent = message;
+        feedback.dataset.state = state;
+        feedback.hidden = !message;
+        feedback.setAttribute('role', state === 'error' ? 'alert' : 'status');
+        if (state === 'error') feedback.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    _recordDraftId(formId) {
+        this._recordDraftIds ||= new Map();
+        const key = `${this.currentStoreId}:${formId}`;
+        if (!this._recordDraftIds.has(key)) this._recordDraftIds.set(key, Date.now());
+        return this._recordDraftIds.get(key);
+    }
+
+    _cacheConfirmedRecords(collection, storeId) {
+        try { localStorage.setItem(`store_${storeId}_${collection}`, JSON.stringify(this[collection])); }
+        catch (error) { console.warn('云端已保存，本地缓存更新失败', error); }
+    }
+
+    _renderConfirmedRecords(collection) {
+        const render = {
+            schedules: ['renderTableWithCurrentFilter', 'renderEmployeeCommissionSummary'],
+            attendanceFees: ['renderAttendanceFeeTable'], interviewFees: ['renderInterviewFeeTable'],
+            operatingCosts: ['renderOperatingCostTable', 'updateOperatingCostStats', 'updateOperatingCostCharts'],
+            reportRebates: ['renderReportRebateTable']
+        };
+        for (const name of [...(render[collection] || []), 'updateStats']) {
+            try { this[name](); } catch (error) { console.error('已保存，但界面更新失败', error); }
+        }
+    }
+
+    async _runConfirmedRecordSave({ formId = '', collection, write, apply, success, afterSave }) {
+        if (this._recordSavePending || this._jlPriceWritePending) return false;
+        if (this.dbManager._importMode) { alert('正在导入数据，请完成后再保存'); return false; }
+        const storeId = this.currentStoreId;
+        const userId = this.dbManager._currentUser?.uid;
+        const form = document.getElementById(formId);
+        const controls = Array.from(form?.querySelectorAll('input, select, textarea, button') || [])
+            .map(element => [element, element.disabled]);
+        const beforeUnload = event => { event.preventDefault(); event.returnValue = ''; };
+        this._recordSavePending = true;
+        controls.forEach(([element]) => { element.disabled = true; });
+        window.addEventListener('beforeunload', beforeUnload);
+        this._setRecordSaveFeedback(formId, '正在保存到云端，请稍候…');
+        const slowTimer = setTimeout(() => this._setRecordSaveFeedback(formId,
+            '仍在等待云端确认，请保持页面打开；网络恢复后会继续提交。'), 12000);
+        let saved = false;
+        try {
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                throw Object.assign(new Error('设备当前离线'), { code: 'unavailable' });
+            }
+            await write(storeId);
+            saved = true;
+        } catch (error) {
+            const code = String(error.code || '').replace(/^firestore\//, '');
+            const reason = {
+                'resource-exhausted': '云数据库额度受限，请等待额度恢复后重试。',
+                'permission-denied': '当前账号没有云端写入权限，请联系管理员。',
+                'unauthenticated': '登录状态已变化，请重新登录后再保存。',
+                'unavailable': '无法连接云数据库，请检查网络后重试。',
+                'deadline-exceeded': '云端确认超时，请核对记录后重试。'
+            }[code] || error.message || '请稍后重试。';
+            this._setRecordSaveFeedback(formId, `保存失败：${reason} ${error.partial ? '部分记录已处理，请核对列表后重试。' : '本次修改尚未保存。'}${form ? '输入内容已保留，请勿刷新。' : ''}`, 'error');
+            console.error('记录保存失败', { collection, code, message: error.message });
+        } finally {
+            clearTimeout(slowTimer);
+            window.removeEventListener('beforeunload', beforeUnload);
+            this._recordSavePending = false;
+            controls.forEach(([element, disabled]) => { element.disabled = disabled; });
+        }
+        if (!saved) return false;
+        if (this.currentStoreId !== storeId || this.dbManager._currentUser?.uid !== userId) {
+            this._setRecordSaveFeedback(formId, '原店铺记录已保存。当前店铺或账号已切换，请查看原店铺确认。', 'success');
+            return true;
+        }
+        apply();
+        this._cacheConfirmedRecords(collection, storeId);
+        this._recordDraftIds?.delete(`${storeId}:${formId}`);
+        this._setRecordSaveFeedback(formId, success, 'success');
+        this._renderConfirmedRecords(collection);
+        try { afterSave?.(); } catch (error) { console.error('已保存，但表单更新失败', error); }
+        this.showSuccessMessage(success);
+        return true;
+    }
+
+    async _saveDailyRecord(collection, record, options) {
+        return this._runConfirmedRecordSave({ ...options, collection,
+            write: storeId => this.dbManager.saveRecord(collection, record, storeId),
+            apply: () => {
+                const index = this[collection].findIndex(item => String(item.id) === String(record.id));
+                if (index < 0) this[collection].push(record);
+                else this[collection][index] = record;
+            }
+        });
+    }
+
+    async _deleteDailyRecords(collection, ids, success) {
+        return this._runConfirmedRecordSave({ collection, success,
+            write: storeId => this.dbManager.deleteRecords(collection, ids, storeId, confirmedIds => {
+                // Large clears can span batches. Reflect only batches the server confirmed.
+                if (this.currentStoreId !== storeId) return;
+                const removed = new Set(confirmedIds.map(String));
+                this[collection] = this[collection].filter(item => !removed.has(String(item.id)));
+                this._cacheConfirmedRecords(collection, storeId);
+                this._renderConfirmedRecords(collection);
+            }),
+            apply: () => {
+                const removed = new Set(ids.map(String));
+                this[collection] = this[collection].filter(item => !removed.has(String(item.id)));
+            }
+        });
+    }
+
+    async addSchedule() {
+        if (this._recordSavePending) return;
         const formData = {
-            id: Date.now().toString(),
+            id: String(this._recordDraftId('scheduleForm')),
             employeeName: document.getElementById('employeeName').value.trim(),
             scheduleDate: document.getElementById('scheduleDate').value,
             startTime: document.getElementById('startTime').value,
@@ -2491,28 +2622,12 @@ class ScheduleManager {
             return;
         }
 
-        // 添加到数组
-        this.schedules.push(formData);
-
-        // 日常新增只写入这一条 Firestore 文档，避免重写整个 schedules 集合
-        this.saveScheduleItem(formData, 'add').catch(error => {
-            console.error('保存新增排班到 Firestore 失败:', error);
+        return this._saveDailyRecord('schedules', formData, {
+            formId: 'scheduleForm', success: '排班记录已保存到云端！',
+            afterSave: () => { this.handlePostAddDisplay(formData); this.clearForm(); }
         });
-
-        // 智能显示逻辑：如果有筛选条件，保持筛选状态；否则显示新添加的记录
-        this.handlePostAddDisplay(formData);
-
-        // 更新统计信息
-        this.updateStats();
-
-        // 显示成功消息
-        this.showSuccessMessage(`排班记录添加成功！已为 ${formData.employeeName} 添加 ${this.formatDate(formData.scheduleDate)} ${this.formatTimeRange(formData.startTime, formData.endTime)} 的排班`);
-
-        // 清空表单
-        this.clearForm();
     }
 
-    // 验证表单数据
     validateFormData(data) {
         if (!data.employeeName) {
             alert('请输入员工姓名');
@@ -2562,6 +2677,7 @@ class ScheduleManager {
 
     // 清空表单
     clearForm() {
+        if (this._recordSavePending) return;
         document.getElementById('scheduleForm').reset();
     }
 
@@ -2686,20 +2802,15 @@ class ScheduleManager {
     }
 
     // 删除排班记录
-    deleteSchedule(id) {
+    async deleteSchedule(id) {
+        if (this._recordSavePending) return;
         if (confirm('确定要删除这条排班记录吗？')) {
-            this.schedules = this.schedules.filter(schedule => schedule.id !== id);
-            this.deleteScheduleItem(id).catch(error => {
-                console.error('从 Firestore 删除排班失败:', error);
-            });
-            this.renderTableWithCurrentFilter();
-            this.updateStats();
-            this.showSuccessMessage('排班记录删除成功！');
+            return this._deleteDailyRecords('schedules', [id], '排班记录已从云端删除！');
         }
     }
 
-    // 编辑排班记录
     editSchedule(id) {
+        if (this._recordSavePending) return;
         const schedule = this.schedules.find(s => s.id === id);
         if (!schedule) {
             alert('未找到要编辑的记录');
@@ -2724,7 +2835,8 @@ class ScheduleManager {
     }
 
     // 更新排班记录
-    updateSchedule() {
+    async updateSchedule() {
+        if (this._recordSavePending) return;
         if (!this.editingId) {
             alert('编辑状态异常');
             return;
@@ -2747,34 +2859,14 @@ class ScheduleManager {
             return;
         }
 
-        // 更新数据
-        const scheduleIndex = this.schedules.findIndex(s => s.id === this.editingId);
-        if (scheduleIndex !== -1) {
-            const updatedSchedule = {
-                ...this.schedules[scheduleIndex],
-                ...formData,
-                updatedAt: new Date().toISOString()
-            };
-            this.schedules[scheduleIndex] = updatedSchedule;
-
-            // 日常编辑只更新这一条 Firestore 文档
-            this.saveScheduleItem(updatedSchedule, 'update').catch(error => {
-                console.error('保存修改后的排班到 Firestore 失败:', error);
-            });
-
-            // 重新渲染表格和统计
-            this.renderTableWithCurrentFilter();
-            this.updateStats();
-
-            // 关闭模态框
-            this.closeEditModal();
-
-            // 显示成功消息
-            this.showSuccessMessage('排班记录修改成功！');
-        }
+        const existing = this.schedules.find(item => item.id === this.editingId);
+        if (!existing) { alert('记录已不存在，请重新选择'); return; }
+        const record = { ...existing, ...formData, updatedAt: new Date().toISOString() };
+        return this._saveDailyRecord('schedules', record, {
+            formId: 'editForm', success: '排班记录修改已保存到云端！', afterSave: () => this.closeEditModal()
+        });
     }
 
-    // 验证编辑表单数据
     validateEditFormData(data) {
         if (!data.employeeName) {
             alert('请输入员工姓名');
@@ -2853,6 +2945,7 @@ class ScheduleManager {
 
     // 关闭编辑模态框
     closeEditModal() {
+        if (this._recordSavePending) return;
         document.getElementById('editModal').style.display = 'none';
         this.editingId = null;
         document.getElementById('editForm').reset();
@@ -3749,42 +3842,14 @@ ${photoStatus}`;
     }
 
     // 清除所有数据
-    clearAllData() {
-        if (this.schedules.length === 0) {
-            alert('当前没有数据需要清除');
-            return;
+    async clearAllData() {
+        if (this._recordSavePending) return;
+        if (!this.schedules.length) { alert('当前没有排班记录需要清除'); return; }
+        if (confirm(`确定要清除当前已加载的 ${this.schedules.length} 条排班记录吗？此操作不可恢复！`) && prompt('请输入"确认删除"来确认此操作：') === '确认删除') {
+            return this._deleteDailyRecords('schedules', this.schedules.map(item => item.id), '排班记录已从云端清除！');
         }
-
-        // 双重确认机制
-        const firstConfirm = confirm(`确定要清除所有 ${this.schedules.length} 条排班记录吗？\n\n此操作将删除所有数据，包括：\n- 所有排班记录\n- 员工信息\n- 项目信息\n- 客户信息\n- 付款和提成数据\n\n此操作不可撤销！`);
-        
-        if (!firstConfirm) {
-            return;
-        }
-
-        // 第二次确认 - 使用prompt要求用户输入确认文字
-        const confirmText = prompt('⚠️ 最后确认 ⚠️\n\n您真的要删除所有数据吗？\n\n此操作将永久删除所有排班记录，无法恢复！\n\n请输入"确认删除"来继续：');
-        
-        if (confirmText !== '确认删除') {
-            if (confirmText !== null) {
-                alert('输入错误，操作已取消');
-            }
-            return;
-        }
-
-        // 清空数据
-        this.schedules = [];
-        this.saveSchedules();
-        
-        // 重新渲染界面
-        this.renderTableWithCurrentFilter();
-        this.updateStats();
-        
-        // 显示成功消息
-        this.showSuccessMessage('所有排班记录已清除！');
     }
 
-    // 检查时间段冲突
     hasTimeConflict(newSchedule) {
         return this.schedules.some(existingSchedule => {
             // 检查是否是同一天和同一个员工
@@ -4870,79 +4935,29 @@ ${photoStatus}`;
     }
 
     // 添加坐班费用
-    addAttendanceFee() {
+    async addAttendanceFee() {
+        if (this._recordSavePending) return;
         const formData = {
             date: document.getElementById('attendanceDate').value,
             employeeName: document.getElementById('attendanceEmployee').value,
             fee: parseFloat(document.getElementById('attendanceFee').value)
         };
-
-        if (!formData.date) {
-            alert('请选择坐班日期');
-            return;
+        if (!formData.date) { alert('请选择坐班日期'); return; }
+        if (!formData.employeeName) { alert('请选择员工'); return; }
+        if (!Number.isFinite(formData.fee) || formData.fee <= 0) { alert('请输入有效的坐班费用'); return; }
+        let existing = this.attendanceFees.find(item => item.id === this.editingAttendanceFeeId);
+        if (this.editingAttendanceFeeId && !existing) { alert('记录已不存在，请重新选择'); return; }
+        if (!existing) {
+            existing = this.attendanceFees.find(item => item.date === formData.date && item.employeeName === formData.employeeName);
+            if (existing && !confirm('该员工在该日期已有坐班费用记录，是否要更新？')) return;
         }
-        if (!formData.employeeName) {
-            alert('请选择员工');
-            return;
-        }
-        if (!formData.fee || formData.fee < 0) {
-            alert('请输入有效的坐班费用');
-            return;
-        }
-
-        // 如果是编辑模式
-        if (this.editingAttendanceFeeId) {
-            const existingFee = this.attendanceFees.find(fee => fee.id === this.editingAttendanceFeeId);
-            if (existingFee) {
-                existingFee.date = formData.date;
-                existingFee.employeeName = formData.employeeName;
-                existingFee.fee = formData.fee;
-                existingFee.updatedAt = new Date().toISOString();
-                this.showSuccessMessage('坐班费用修改成功！');
-            }
-        } else {
-            // 检查是否已存在相同日期和员工的记录
-            const existingFee = this.attendanceFees.find(fee => 
-                fee.date === formData.date && fee.employeeName === formData.employeeName
-            );
-
-            if (existingFee) {
-                if (confirm('该员工在该日期已有坐班费用记录，是否要更新？')) {
-                    existingFee.fee = formData.fee;
-                    existingFee.updatedAt = new Date().toISOString();
-                } else {
-                    return;
-                }
-            } else {
-                const attendanceFee = {
-                    id: Date.now().toString(),
-                    ...formData,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                };
-                this.attendanceFees.push(attendanceFee);
-                console.log('添加坐班费用:', attendanceFee);
-                console.log('当前坐班费用总数:', this.attendanceFees.length);
-            }
-            this.showSuccessMessage('坐班费用添加成功！');
-        }
-
-        // 保存数据（异步保存，但立即渲染表格）
-        this.saveAttendanceFees().then(() => {
-            console.log('保存后的坐班费用总数:', this.attendanceFees.length);
-            console.log('保存后的坐班费用数据:', this.attendanceFees);
-        }).catch(error => {
-            console.error('保存坐班费用失败:', error);
-            // 即使保存失败，也显示数据（数据已在内存中）
+        const now = new Date().toISOString();
+        const record = { ...(existing || { id: String(this._recordDraftId('attendanceFeeForm')), createdAt: now }), ...formData, updatedAt: now };
+        return this._saveDailyRecord('attendanceFees', record, {
+            formId: 'attendanceFeeForm', success: '坐班费用已保存到云端！', afterSave: () => this.clearAttendanceFeeForm()
         });
-        
-        // 立即渲染表格（数据已经在 this.attendanceFees 中）
-        this.renderAttendanceFeeTable();
-        this.updateStats();
-        this.clearAttendanceFeeForm();
     }
 
-    // 渲染坐班费用表格
     renderAttendanceFeeTable() {
         const tbody = document.getElementById('attendanceFeeTableBody');
         if (!tbody) {
@@ -5021,6 +5036,7 @@ ${photoStatus}`;
 
     // 编辑坐班费用
     editAttendanceFee(id) {
+        if (this._recordSavePending) return;
         const fee = this.attendanceFees.find(f => f.id === id);
         if (!fee) {
             alert('未找到要编辑的坐班费用记录');
@@ -5040,118 +5056,53 @@ ${photoStatus}`;
     }
 
     // 删除坐班费用
-    deleteAttendanceFee(id) {
-        const fee = this.attendanceFees.find(f => f.id === id);
-        if (!fee) {
-            alert('未找到要删除的坐班费用记录');
-            return;
-        }
-
-        if (confirm(`确定要删除 ${fee.employeeName} 在 ${this.formatDate(fee.date)} 的坐班费用记录吗？`)) {
-            this.attendanceFees = this.attendanceFees.filter(f => f.id !== id);
-            this.saveAttendanceFees().catch(err => {
-                console.error('保存坐班费用失败:', err);
-                alert('删除坐班费用失败：' + err.message);
-            });
-            this.renderAttendanceFeeTable();
-            this.updateStats();
-            this.showSuccessMessage('坐班费用删除成功！');
+    async deleteAttendanceFee(id) {
+        if (this._recordSavePending) return;
+        const record = this.attendanceFees.find(item => item.id === id);
+        if (!record) { alert('未找到要删除的坐班费用记录'); return; }
+        if (confirm('确定要删除这条坐班费用记录吗？')) {
+            return this._deleteDailyRecords('attendanceFees', [id], '坐班费用已从云端删除！');
         }
     }
 
-    // 清除所有坐班费用
-    clearAllAttendanceFees() {
-        if (this.attendanceFees.length === 0) {
-            alert('当前没有坐班费用记录需要清除');
-            return;
-        }
-
-        if (confirm('确定要清除所有坐班费用记录吗？此操作不可恢复！')) {
-            const confirmText = prompt('请输入"确认清除"来确认此操作：');
-            if (confirmText === '确认清除') {
-                this.attendanceFees = [];
-                this.saveAttendanceFees().catch(err => {
-                    console.error('保存坐班费用失败:', err);
-                    alert('清除坐班费用失败：' + err.message);
-                });
-                this.renderAttendanceFeeTable();
-                this.updateStats();
-                this.showSuccessMessage('所有坐班费用记录已清除！');
-            } else {
-                alert('操作已取消');
-            }
+    async clearAllAttendanceFees() {
+        if (this._recordSavePending) return;
+        if (!this.attendanceFees.length) { alert('当前没有坐班费用记录需要清除'); return; }
+        if (confirm('确定要清除当前已加载的所有坐班费用记录吗？此操作不可恢复！') && prompt('请输入"确认清除"来确认此操作：') === '确认清除') {
+            return this._deleteDailyRecords('attendanceFees', this.attendanceFees.map(item => item.id), '坐班费用记录已从云端清除！');
         }
     }
 
-    // 清空坐班费用表单
     clearAttendanceFeeForm() {
+        if (this._recordSavePending) return;
         document.getElementById('attendanceFeeForm').reset();
         this.editingAttendanceFeeId = null;
     }
 
     // 添加面试费用
-    addInterviewFee() {
+    async addInterviewFee() {
+        if (this._recordSavePending) return;
         const formData = {
             date: document.getElementById('interviewDate').value,
             employeeName: document.getElementById('interviewEmployee').value,
             fee: parseFloat(document.getElementById('interviewFee').value)
         };
-
-        if (!formData.date) {
-            alert('请选择面试日期');
-            return;
+        if (!formData.date) { alert('请选择面试日期'); return; }
+        if (!formData.employeeName) { alert('请选择员工'); return; }
+        if (!Number.isFinite(formData.fee) || formData.fee <= 0) { alert('请输入有效的面试费用'); return; }
+        let existing = this.interviewFees.find(item => item.id === this.editingInterviewFeeId);
+        if (this.editingInterviewFeeId && !existing) { alert('记录已不存在，请重新选择'); return; }
+        if (!existing) {
+            existing = this.interviewFees.find(item => item.date === formData.date && item.employeeName === formData.employeeName);
+            if (existing && !confirm('该员工在该日期已有面试费用记录，是否要更新？')) return;
         }
-        if (!formData.employeeName) {
-            alert('请选择员工');
-            return;
-        }
-        if (!formData.fee || formData.fee < 0) {
-            alert('请输入有效的面试费用');
-            return;
-        }
-
-        // 如果是编辑模式
-        if (this.editingInterviewFeeId) {
-            const existingFee = this.interviewFees.find(fee => fee.id === this.editingInterviewFeeId);
-            if (existingFee) {
-                existingFee.date = formData.date;
-                existingFee.employeeName = formData.employeeName;
-                existingFee.fee = formData.fee;
-                existingFee.updatedAt = new Date().toISOString();
-                this.showSuccessMessage('面试费用修改成功！');
-            }
-        } else {
-            // 检查是否已存在相同日期和员工的记录
-            const existingFee = this.interviewFees.find(fee => 
-                fee.date === formData.date && fee.employeeName === formData.employeeName
-            );
-
-            if (existingFee) {
-                if (confirm('该员工在该日期已有面试费用记录，是否要更新？')) {
-                    existingFee.fee = formData.fee;
-                    existingFee.updatedAt = new Date().toISOString();
-                } else {
-                    return;
-                }
-            } else {
-                const interviewFee = {
-                    id: Date.now().toString(),
-                    ...formData,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                };
-                this.interviewFees.push(interviewFee);
-            }
-            this.showSuccessMessage('面试费用添加成功！');
-        }
-
-        this.saveInterviewFees();
-        this.renderInterviewFeeTable();
-        this.updateStats();
-        this.clearInterviewFeeForm();
+        const now = new Date().toISOString();
+        const record = { ...(existing || { id: String(this._recordDraftId('interviewFeeForm')), createdAt: now }), ...formData, updatedAt: now };
+        return this._saveDailyRecord('interviewFees', record, {
+            formId: 'interviewFeeForm', success: '面试费用已保存到云端！', afterSave: () => this.clearInterviewFeeForm()
+        });
     }
 
-    // 渲染面试费用表格
     renderInterviewFeeTable() {
         const tbody = document.getElementById('interviewFeeTableBody');
         tbody.innerHTML = '';
@@ -5211,6 +5162,7 @@ ${photoStatus}`;
 
     // 编辑面试费用
     editInterviewFee(id) {
+        if (this._recordSavePending) return;
         const fee = this.interviewFees.find(f => f.id === id);
         if (!fee) {
             alert('未找到要编辑的面试费用记录');
@@ -5230,51 +5182,32 @@ ${photoStatus}`;
     }
 
     // 删除面试费用
-    deleteInterviewFee(id) {
-        const fee = this.interviewFees.find(f => f.id === id);
-        if (!fee) {
-            alert('未找到要删除的面试费用记录');
-            return;
-        }
-
-        if (confirm(`确定要删除 ${fee.employeeName} 在 ${this.formatDate(fee.date)} 的面试费用记录吗？`)) {
-            this.interviewFees = this.interviewFees.filter(f => f.id !== id);
-            this.saveInterviewFees();
-            this.renderInterviewFeeTable();
-            this.updateStats();
-            this.showSuccessMessage('面试费用删除成功！');
+    async deleteInterviewFee(id) {
+        if (this._recordSavePending) return;
+        const record = this.interviewFees.find(item => item.id === id);
+        if (!record) { alert('未找到要删除的面试费用记录'); return; }
+        if (confirm('确定要删除这条面试费用记录吗？')) {
+            return this._deleteDailyRecords('interviewFees', [id], '面试费用已从云端删除！');
         }
     }
 
-    // 清除所有面试费用
-    clearAllInterviewFees() {
-        if (this.interviewFees.length === 0) {
-            alert('当前没有面试费用记录需要清除');
-            return;
-        }
-
-        if (confirm('确定要清除所有面试费用记录吗？此操作不可恢复！')) {
-            const confirmText = prompt('请输入"确认清除"来确认此操作：');
-            if (confirmText === '确认清除') {
-                this.interviewFees = [];
-                this.saveInterviewFees();
-                this.renderInterviewFeeTable();
-                this.updateStats();
-                this.showSuccessMessage('所有面试费用记录已清除！');
-            } else {
-                alert('操作已取消');
-            }
+    async clearAllInterviewFees() {
+        if (this._recordSavePending) return;
+        if (!this.interviewFees.length) { alert('当前没有面试费用记录需要清除'); return; }
+        if (confirm('确定要清除当前已加载的所有面试费用记录吗？此操作不可恢复！') && prompt('请输入"确认清除"来确认此操作：') === '确认清除') {
+            return this._deleteDailyRecords('interviewFees', this.interviewFees.map(item => item.id), '面试费用记录已从云端清除！');
         }
     }
 
-    // 清空面试费用表单
     clearInterviewFeeForm() {
+        if (this._recordSavePending) return;
         document.getElementById('interviewFeeForm').reset();
         this.editingInterviewFeeId = null;
     }
 
     // 添加运营成本
-    addOperatingCost() {
+    async addOperatingCost() {
+        if (this._recordSavePending) return;
         // 检查表单元素是否存在
         const dateEl = document.getElementById('operatingCostDate');
         const categoryEl = document.getElementById('operatingCostCategory');
@@ -5308,56 +5241,20 @@ ${photoStatus}`;
             alert('请输入费用项目名称');
             return;
         }
-        if (!formData.amount || formData.amount < 0) {
+        if (!Number.isFinite(formData.amount) || formData.amount <= 0) {
             alert('请输入有效的金额');
             return;
         }
 
-        // 如果是编辑模式
-        if (this.editingOperatingCostId) {
-            const existingCost = this.operatingCosts.find(cost => cost.id === this.editingOperatingCostId);
-            if (existingCost) {
-                existingCost.date = formData.date;
-                existingCost.category = formData.category;
-                existingCost.item = formData.item;
-                existingCost.note = formData.note;
-                existingCost.amount = formData.amount;
-                existingCost.updatedAt = new Date().toISOString();
-                this.showSuccessMessage('运营成本修改成功！');
-            }
-        } else {
-            // 添加新记录
-            const operatingCost = {
-                id: Date.now().toString(),
-                ...formData,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-            this.operatingCosts.push(operatingCost);
-            this.showSuccessMessage('运营成本添加成功！');
-        }
-
-        // 异步保存（不阻塞界面）
-        this.saveOperatingCosts().then(() => {
-            // 保存成功，更新界面
-            this.renderOperatingCostTable();
-            this.updateStats();
-            this.updateOperatingCostStats();
-            this.updateOperatingCostCharts();
-            this.clearOperatingCostForm();
-        }).catch((error) => {
-            // 保存失败，但数据已在内存中
-            console.error('保存运营成本失败:', error);
-            // saveOperatingCosts已经显示了错误提示，这里只更新界面（数据在内存中）
-            this.renderOperatingCostTable();
-            this.updateStats();
-            this.updateOperatingCostStats();
-            this.updateOperatingCostCharts();
-            this.clearOperatingCostForm();
+        const existing = this.operatingCosts.find(item => item.id === this.editingOperatingCostId);
+        if (this.editingOperatingCostId && !existing) { alert('记录已不存在，请重新选择'); return; }
+        const now = new Date().toISOString();
+        const record = { ...(existing || { id: String(this._recordDraftId('operatingCostForm')), createdAt: now }), ...formData, updatedAt: now };
+        return this._saveDailyRecord('operatingCosts', record, {
+            formId: 'operatingCostForm', success: '运营成本已保存到云端！', afterSave: () => this.clearOperatingCostForm()
         });
     }
 
-    // 渲染运营成本表格
     renderOperatingCostTable() {
         const tbody = document.getElementById('operatingCostTableBody');
         tbody.innerHTML = '';
@@ -5795,6 +5692,7 @@ ${photoStatus}`;
 
     // 编辑运营成本
     editOperatingCost(id) {
+        if (this._recordSavePending) return;
         const cost = this.operatingCosts.find(c => c.id === id);
         if (!cost) {
             alert('未找到要编辑的运营成本记录');
@@ -5816,65 +5714,25 @@ ${photoStatus}`;
     }
 
     // 删除运营成本
-    deleteOperatingCost(id) {
-        const cost = this.operatingCosts.find(c => c.id === id);
-        if (!cost) {
-            alert('未找到要删除的运营成本记录');
-            return;
-        }
-
-        if (confirm(`确定要删除"${cost.item}"在 ${this.formatDate(cost.date)} 的运营成本记录吗？`)) {
-            this.operatingCosts = this.operatingCosts.filter(c => c.id !== id);
-            this.saveOperatingCosts().then(() => {
-                this.renderOperatingCostTable();
-                this.updateStats();
-                this.updateOperatingCostStats();
-                this.updateOperatingCostCharts();
-                this.showSuccessMessage('运营成本删除成功！');
-            }).catch((error) => {
-                console.error('保存失败:', error);
-                // 即使保存失败，也更新界面（数据已在内存中删除）
-                this.renderOperatingCostTable();
-                this.updateStats();
-                this.updateOperatingCostStats();
-                this.updateOperatingCostCharts();
-            });
+    async deleteOperatingCost(id) {
+        if (this._recordSavePending) return;
+        const record = this.operatingCosts.find(item => item.id === id);
+        if (!record) { alert('未找到要删除的运营成本记录'); return; }
+        if (confirm('确定要删除这条运营成本记录吗？')) {
+            return this._deleteDailyRecords('operatingCosts', [id], '运营成本已从云端删除！');
         }
     }
 
-    // 清除所有运营成本
-    clearAllOperatingCosts() {
-        if (this.operatingCosts.length === 0) {
-            alert('当前没有运营成本记录需要清除');
-            return;
-        }
-
-        if (confirm('确定要清除所有运营成本记录吗？此操作不可恢复！')) {
-            const confirmText = prompt('请输入"确认清除"来确认此操作：');
-            if (confirmText === '确认清除') {
-                this.operatingCosts = [];
-                this.saveOperatingCosts().then(() => {
-                    this.renderOperatingCostTable();
-                    this.updateStats();
-                    this.updateOperatingCostStats();
-                    this.updateOperatingCostCharts();
-                    this.showSuccessMessage('所有运营成本记录已清除！');
-                }).catch((error) => {
-                    console.error('保存失败:', error);
-                    // 即使保存失败，也更新界面
-                    this.renderOperatingCostTable();
-                    this.updateStats();
-                    this.updateOperatingCostStats();
-                    this.updateOperatingCostCharts();
-                });
-            } else {
-                alert('操作已取消');
-            }
+    async clearAllOperatingCosts() {
+        if (this._recordSavePending) return;
+        if (!this.operatingCosts.length) { alert('当前没有运营成本记录需要清除'); return; }
+        if (confirm('确定要清除当前已加载的所有运营成本记录吗？此操作不可恢复！') && prompt('请输入"确认清除"来确认此操作：') === '确认清除') {
+            return this._deleteDailyRecords('operatingCosts', this.operatingCosts.map(item => item.id), '运营成本记录已从云端清除！');
         }
     }
 
-    // 清空运营成本表单
     clearOperatingCostForm() {
+        if (this._recordSavePending) return;
         document.getElementById('operatingCostForm').reset();
         this.editingOperatingCostId = null;
     }
@@ -6148,6 +6006,7 @@ ${photoStatus}`;
     }
 
     openReportRebateModal(resetForm = true) {
+        if (this._recordSavePending) return;
         const modal = document.getElementById('reportRebateModal');
         if (!modal) return;
 
@@ -6165,6 +6024,7 @@ ${photoStatus}`;
     }
 
     closeReportRebateModal(resetForm = true) {
+        if (this._recordSavePending) return;
         const modal = document.getElementById('reportRebateModal');
         if (!modal) return;
 
@@ -6197,60 +6057,30 @@ ${photoStatus}`;
     }
 
     // 添加报告返现
-    addReportRebate() {
+    async addReportRebate() {
+        if (this._recordSavePending) return;
         const date = document.getElementById('reportRebateDate').value;
         const userName = document.getElementById('reportRebateUserName').value.trim();
         const employeeName = document.getElementById('reportRebateEmployee').value;
         const content = document.getElementById('reportRebateContent').value.trim();
         const amount = parseFloat(document.getElementById('reportRebateAmount').value);
 
-        if (!date || !userName || !employeeName || !content || isNaN(amount) || amount < 0) {
+        if (!date || !userName || !employeeName || !content || !Number.isFinite(amount) || amount < 0) {
             alert('请填写所有必填字段，并确保金额为有效数字！');
             return;
         }
 
-        // 如果是编辑模式
-        if (this.editingReportRebateId) {
-            const index = this.reportRebates.findIndex(r => r.id === this.editingReportRebateId);
-            if (index !== -1) {
-                this.reportRebates[index] = {
-                    id: this.editingReportRebateId,
-                    date: date,
-                    userName: userName,
-                    employeeName: employeeName,
-                    content: content,
-                    amount: amount
-                };
-                this.saveReportRebates();
-                this.renderReportRebateTable();
-                this.updateStats();
-                this.clearReportRebateForm();
-                this.closeReportRebateModal(false);
-                this.showSuccessMessage('报告返现记录更新成功！');
-            }
-        } else {
-            // 新增模式
-            const reportRebate = {
-                id: Date.now(),
-                date: date,
-                userName: userName,
-                employeeName: employeeName,
-                content: content,
-                amount: amount
-            };
-
-            this.reportRebates.push(reportRebate);
-            this.saveReportRebates();
-            this.renderReportRebateTable();
-            this.updateStats();
-            this.clearReportRebateForm();
-            this.closeReportRebateModal(false);
-            this.showSuccessMessage('报告返现记录添加成功！');
-        }
+        const existing = this.reportRebates.find(item => item.id === this.editingReportRebateId);
+        if (this.editingReportRebateId && !existing) { alert('记录已不存在，请重新选择'); return; }
+        const record = { ...(existing || { id: this._recordDraftId('reportRebateForm') }), date, userName, employeeName, content, amount };
+        return this._saveDailyRecord('reportRebates', record, {
+            formId: 'reportRebateForm', success: '报告返现已保存到云端！',
+            afterSave: () => { this.clearReportRebateForm(); this.closeReportRebateModal(false); }
+        });
     }
 
-    // 编辑报告返现记录
     editReportRebate(id) {
+        if (this._recordSavePending) return;
         const rebate = this.reportRebates.find(r => r.id === id);
         
         if (!rebate) {
@@ -6349,46 +6179,25 @@ ${photoStatus}`;
     }
 
     // 删除报告返现记录
-    deleteReportRebate(id) {
-        const rebate = this.reportRebates.find(r => r.id === id);
-        
-        if (!rebate) {
-            alert('未找到要删除的报告返现记录');
-            return;
-        }
-
-        if (confirm(`确定要删除用户"${rebate.userName}"在 ${this.formatDate(rebate.date)} 的报告返现记录吗？`)) {
-            this.reportRebates = this.reportRebates.filter(r => r.id !== id);
-            this.saveReportRebates();
-            this.renderReportRebateTable();
-            this.updateStats();
-            this.showSuccessMessage('报告返现记录删除成功！');
+    async deleteReportRebate(id) {
+        if (this._recordSavePending) return;
+        const record = this.reportRebates.find(item => item.id === id);
+        if (!record) { alert('未找到要删除的报告返现记录'); return; }
+        if (confirm('确定要删除这条报告返现记录吗？')) {
+            return this._deleteDailyRecords('reportRebates', [id], '报告返现已从云端删除！');
         }
     }
 
-    // 清除所有报告返现记录
-    clearAllReportRebates() {
-        if (this.reportRebates.length === 0) {
-            alert('当前没有报告返现记录需要清除');
-            return;
-        }
-
-        if (confirm('确定要清除所有报告返现记录吗？此操作不可恢复！')) {
-            const confirmText = prompt('请输入"确认清除"来确认此操作：');
-            if (confirmText === '确认清除') {
-                this.reportRebates = [];
-                this.saveReportRebates();
-                this.renderReportRebateTable();
-                this.updateStats();
-                this.showSuccessMessage('所有报告返现记录已清除！');
-            } else {
-                alert('操作已取消');
-            }
+    async clearAllReportRebates() {
+        if (this._recordSavePending) return;
+        if (!this.reportRebates.length) { alert('当前没有报告返现记录需要清除'); return; }
+        if (confirm('确定要清除当前已加载的所有报告返现记录吗？此操作不可恢复！') && prompt('请输入"确认清除"来确认此操作：') === '确认清除') {
+            return this._deleteDailyRecords('reportRebates', this.reportRebates.map(item => item.id), '报告返现记录已从云端清除！');
         }
     }
 
-    // 清空报告返现表单
     clearReportRebateForm() {
+        if (this._recordSavePending) return;
         document.getElementById('reportRebateForm').reset();
         this.editingReportRebateId = null;
         this.updateReportRebateModalState(false);

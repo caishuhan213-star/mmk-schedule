@@ -522,6 +522,50 @@ class FirebaseDataManager {
         }
     }
 
+    _requireRecordWrite(collection, storeId) {
+        if (!this._canWrite(collection)) throw Object.assign(new Error('当前账号为只读模式'), { code: 'permission-denied' });
+        if (!this._canOperate()) throw Object.assign(new Error('请登录后再保存'), { code: 'unauthenticated' });
+        if (!storeId) throw new Error('没有选择店铺，无法保存');
+        if (!['schedules', 'attendanceFees', 'interviewFees', 'operatingCosts', 'reportRebates'].includes(collection)) throw new Error('不支持的记录类型');
+    }
+
+    // Daily edits never reconcile/delete a whole collection or prime it with a full read.
+    async saveRecord(collection, record, storeId) {
+        this._requireRecordWrite(collection, storeId);
+        if (record.id === undefined || record.id === null || record.id === '') throw new Error('记录缺少编号');
+        const uid = this._currentUser.uid;
+        const ref = this._collectionRef(storeId, collection).doc(String(record.id));
+        const data = this._copyCollectionItems(record);
+        await this._queueCommitTask(async () => {
+            this._requireRecordWrite(collection, storeId);
+            if (this._currentUser.uid !== uid) throw Object.assign(new Error('登录状态已变化'), { code: 'unauthenticated' });
+            await this._commitOperations([{ type: 'set', ref, data: { ...data, updatedAt: Date.now() } }]);
+        });
+    }
+
+    async deleteRecords(collection, ids, storeId, onConfirmed) {
+        this._requireRecordWrite(collection, storeId);
+        const uid = this._currentUser.uid;
+        const uniqueIds = [...new Set(ids.map(String))];
+        const ref = this._collectionRef(storeId, collection);
+        let completed = 0;
+        await this._queueCommitTask(async () => {
+            try {
+                for (let i = 0; i < uniqueIds.length; i += 450) {
+                    this._requireRecordWrite(collection, storeId);
+                    if (this._currentUser.uid !== uid) throw Object.assign(new Error('登录状态已变化'), { code: 'unauthenticated' });
+                    const chunk = uniqueIds.slice(i, i + 450);
+                    await this._commitOperations(chunk.map(id => ({ type: 'delete', ref: ref.doc(id) })));
+                    completed += chunk.length;
+                    if (this._currentUser?.uid === uid) onConfirmed?.(chunk);
+                }
+            } catch (error) {
+                if (completed) error.partial = true;
+                throw error;
+            }
+        });
+    }
+
     // ====== 各集合的 save 方法 ======
     async saveSchedules(schedules, storeId) {
         return this._saveCollection('schedules', schedules, storeId);
