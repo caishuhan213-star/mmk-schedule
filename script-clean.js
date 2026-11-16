@@ -2521,7 +2521,7 @@ class ScheduleManager {
 
     async _runConfirmedRecordSave({ formId = '', collection, write, apply, success, afterSave }) {
         if (this._recordSavePending || this._jlPriceWritePending) return false;
-        if (this.dbManager._importMode) { alert('正在导入数据，请完成后再保存'); return false; }
+        if (this.dbManager._importing) { alert('正在导入数据，请完成后再保存'); return false; }
         const storeId = this.currentStoreId;
         const userId = this.dbManager._currentUser?.uid;
         const form = document.getElementById(formId);
