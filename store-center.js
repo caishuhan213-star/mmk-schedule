@@ -9,6 +9,7 @@ class StoreCenterManager {
         this._summaryTodayRows = {};
         this._summaryReady = false;
         this._summaryGeneration = 0;
+        this._queryCache = new ConfirmedQueryCache();
         this._summaryMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
         this.setupSummaryScope();
 
@@ -94,12 +95,12 @@ class StoreCenterManager {
         const all = document.createElement('button'); all.className = 'btn btn-secondary'; all.textContent = '全部历史';
         all.addEventListener('click', () => { this._summaryMonth = null; this.loadSummaryScope(); }); bar.append(all);
         const retry = document.createElement('button'); retry.className = 'btn btn-secondary'; retry.textContent = '重新加载';
-        retry.addEventListener('click', () => this.loadSummaryScope()); bar.append(retry);
+        retry.addEventListener('click', () => this.loadSummaryScope(true)); bar.append(retry);
         const status = document.createElement('span'); status.id = 'storeSummaryStatus'; status.setAttribute('role', 'status'); status.textContent = '正在连接云端…'; bar.append(status);
         document.querySelector('.overview-stats').before(bar);
     }
 
-    async loadSummaryScope() {
+    async loadSummaryScope(force = false) {
         const db = this._db(), uid = firebase.auth().currentUser?.uid;
         if (!db || !uid) return;
         const generation = ++this._summaryGeneration, month = this._summaryMonth;
@@ -107,27 +108,36 @@ class StoreCenterManager {
         const status = document.getElementById('storeSummaryStatus');
         status.textContent = '正在加载所选范围…';
         try {
-            const price = await db.collection('team/shared/settings').doc('jlPriceTable').get({ source: 'server' });
-            const employees = new Set((price.data()?.rows || []).map(row => row.name).filter(Boolean)).size;
+            let cachedAt = null;
+            const options = { maxAgeMs: 60000, force, onCache: time => { cachedAt = Math.min(cachedAt || time, time); } };
+            const employees = await this._queryCache.load(ConfirmedQueryCache.scope(uid, 'team/shared/settings/jlPriceTable'), 'employee-count', async () => {
+                const price = await db.collection('team/shared/settings').doc('jlPriceTable').get({ source: 'server' });
+                if (price.metadata.fromCache || price.metadata.hasPendingWrites) throw new Error('等待云端确认');
+                return new Set((price.data()?.rows || []).map(row => row.name).filter(Boolean)).size;
+            }, options);
+            const read = (path, range) => this._queryCache.load(ConfirmedQueryCache.scope(uid, path), range, async () => {
+                let query = db.collection(path);
+                if (range) query = query.where('scheduleDate', '>=', range.start).where('scheduleDate', '<', range.end);
+                const snapshot = await query.get({ source: 'server' });
+                if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) throw new Error('等待云端确认');
+                const rows = []; snapshot.forEach(doc => rows.push(doc.data())); return rows;
+            }, options);
             const entries = await Promise.all(this.stores.map(async store => {
-                let query = db.collection(`team/shared/stores/${store.id}/schedules`);
+                const path = `team/shared/stores/${store.id}/schedules`;
+                let range = null;
                 if (month) {
                     const [year, number] = month.split('-').map(Number);
                     const next = new Date(year, number, 1);
                     const end = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-01';
-                    query = query.where('scheduleDate', '>=', month + '-01').where('scheduleDate', '<', end);
+                    range = { start: month + '-01', end };
                 }
-                const snapshot = await query.get({ source: 'server' });
-                if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) throw new Error('等待云端确认');
-                const rows = []; snapshot.forEach(doc => rows.push(doc.data()));
+                const rows = await read(path, range);
                 const now = new Date(), today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
                 let todayRows = rows.filter(row => row.scheduleDate === today);
                 if (month && month !== today.slice(0, 7)) {
                     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
                     const end = tomorrow.getFullYear() + '-' + String(tomorrow.getMonth() + 1).padStart(2, '0') + '-' + String(tomorrow.getDate()).padStart(2, '0');
-                    const current = await db.collection(`team/shared/stores/${store.id}/schedules`).where('scheduleDate', '>=', today).where('scheduleDate', '<', end).get({ source: 'server' });
-                    if (current.metadata.fromCache || current.metadata.hasPendingWrites) throw new Error('等待云端确认');
-                    todayRows = []; current.forEach(doc => todayRows.push(doc.data()));
+                    todayRows = await read(path, { start: today, end });
                 }
                 return [store.id, { rows, todayRows }];
             }));
@@ -135,7 +145,7 @@ class StoreCenterManager {
             this._summaryRows = Object.fromEntries(entries.map(([id, value]) => [id, value.rows]));
             this._summaryTodayRows = Object.fromEntries(entries.map(([id, value]) => [id, value.todayRows]));
             this._summaryEmployeeCount = employees; this._summaryReady = true;
-            status.textContent = `统计范围：${month || '全部历史'}`;
+            status.textContent = `统计范围：${month || '全部历史'} · ${cachedAt ? '浏览器缓存，更新于 ' + new Date(cachedAt).toLocaleTimeString() : '已从云端更新'} · 缓存有效期 1 分钟，可点击重新加载更新`;
             this.renderStoreGrid(); this.updateOverviewStats();
         } catch (error) {
             if (generation === this._summaryGeneration) status.textContent = '统计加载失败，请检查网络或额度后重新加载。';

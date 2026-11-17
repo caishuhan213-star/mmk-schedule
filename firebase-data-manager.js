@@ -9,6 +9,8 @@ class FirebaseDataManager {
         this._activeStoreId = null;
         this._inactiveStoreTtlMs = 2 * 60 * 1000;
         this._collectionReads = new Map();
+        this._queryCache = typeof ConfirmedQueryCache !== 'undefined' ? new ConfirmedQueryCache() : null;
+        this._inactiveQueryTtlMs = 60 * 1000;
         this._readyCallbacks = [];
         this._isReady = false;
         this._currentUser = null;
@@ -224,7 +226,11 @@ class FirebaseDataManager {
                     batch.delete(operation.ref);
                 }
             });
-            await batch.commit();
+            const scopes = new Set(operations.slice(i, i + BATCH_LIMIT).map(op => op.ref.path?.split('/').slice(0, -1).join('/')).filter(Boolean));
+            const uid = this._currentUser?.uid;
+            const invalidate = () => scopes.forEach(path => this._invalidateQueryCache(uid, path));
+            invalidate();
+            try { await batch.commit(); } finally { invalidate(); }
         }
     }
 
@@ -554,7 +560,11 @@ class FirebaseDataManager {
     }
 
     // Explicit exports/history reads fail visibly; never turn a failed read into [].
-    async readCollectionRange(collection, storeId, range = null) {
+    _invalidateQueryCache(uid, path) {
+        if (this._queryCache) this._queryCache.invalidate(ConfirmedQueryCache.scope(uid, path));
+    }
+
+    async readCollectionRange(collection, storeId, range = null, options = {}) {
         if (!this._canOperate()) throw new Error('请登录后加载数据');
         const uid = this._currentUser.uid;
         const session = this._storeSubscriptions.get(storeId);
@@ -562,17 +572,20 @@ class FirebaseDataManager {
         const scope = session?.scopes?.[collection] || null;
         const covers = !scope || (range && scope.start <= range.start && scope.end >= range.end);
         let items;
-        if (covers && cached && !cached.metadata.fromCache && !cached.metadata.pending && session.listeners.has(collection)) {
+        if (!options.force && covers && cached && !cached.metadata.fromCache && !cached.metadata.pending && session.listeners.has(collection)) {
             items = cached.items;
         } else {
-            const key = `${this._collectionKey(storeId, collection)}::${JSON.stringify(range)}::${uid}`;
+            const key = `${this._collectionKey(storeId, collection)}::${JSON.stringify(range)}::${uid}::${options.cacheMaxAgeMs && !options.force ? 'cached' : 'server'}`;
             if (!this._collectionReads.has(key)) {
-                const request = this._rangeRef(storeId, collection, range).get({ source: 'server' }).then(snapshot => {
+                const load = () => this._rangeRef(storeId, collection, range).get({ source: 'server' }).then(snapshot => {
                     if (snapshot.metadata?.fromCache || snapshot.metadata?.hasPendingWrites) throw new Error('数据尚未获得云端确认，请联网后重试');
                     const rows = [];
                     snapshot.forEach(doc => rows.push(this._stripInternalFields(doc.data())));
                     return rows;
-                }).finally(() => {
+                });
+                const request = (this._queryCache && options.cacheMaxAgeMs > 0
+                    ? this._queryCache.load(ConfirmedQueryCache.scope(uid, `team/${this.teamId}/stores/${storeId}/${collection}`), range, load,
+                        { maxAgeMs: options.cacheMaxAgeMs, force: options.force, onCache: options.onCache }) : load()).finally(() => {
                     if (this._collectionReads.get(key) === request) this._collectionReads.delete(key);
                 });
                 this._collectionReads.set(key, request);
@@ -721,7 +734,28 @@ class FirebaseDataManager {
         await this._settingsDocRef('jlPriceTable').update(field, referrer);
     }
 
+    async saveEmployeeProfile(profile, changes, storeId, referrerPatch) {
+        if (!this._canOperate()) throw Object.assign(new Error('请登录后再保存'), { code: 'unauthenticated' });
+        if (!this._canWrite('employees')) throw Object.assign(new Error('当前账号没有写入权限'), { code: 'permission-denied' });
+        if (!storeId || !profile.id || !profile.rosterId) throw new Error('员工或店铺编号无效');
+        const allowed = ['phone', 'hireDate', 'notes', 'photo'];
+        const patch = Object.fromEntries(Object.entries(changes).filter(([key]) => allowed.includes(key)));
+        const db = this._getFirestore(), batch = db.batch();
+        // A roster-only employee may have no store profile yet. Merge creates
+        // that profile without reading or replacing existing unrelated fields.
+        batch.set(this._collectionRef(storeId, 'employees').doc(String(profile.id)), {
+            id: profile.id, rosterId: profile.rosterId, ...patch, updatedAt: Date.now()
+        }, { merge: true });
+        if (referrerPatch !== undefined) batch.update(this._settingsDocRef('jlPriceTable'),
+            new firebase.firestore.FieldPath('referrers', profile.rosterId), EmployeeRoster.normalizeReferrer(referrerPatch));
+        const uid = this._currentUser.uid, path = `team/${this.teamId}/stores/${storeId}/employees`;
+        this._invalidateQueryCache(uid, path);
+        try { await batch.commit(); } finally { this._invalidateQueryCache(uid, path); }
+    }
+
     async saveJlPriceTable(rows, options = {}) {
+        const uid = this._currentUser?.uid, path = `team/${this.teamId}/settings/jlPriceTable`;
+        this._invalidateQueryCache(uid, path);
         // Compare against the version the editor saw. A transaction also keeps
         // profile edits and name/price changes together when both are supplied.
         if (options.expectedRows) {
@@ -742,7 +776,7 @@ class FirebaseDataManager {
                     const profileRef = this._collectionRef(options.storeId, 'employees').doc(String(options.profile.id));
                     transaction.set(profileRef, options.profile, { merge: true });
                 }
-            });
+            }).finally(() => this._invalidateQueryCache(uid, path));
         }
         if (!this._canWrite('jlPriceTable')) return;
 
@@ -759,7 +793,7 @@ class FirebaseDataManager {
             rows: cleanRows,
             updatedAt: Date.now(),
             userId: this._currentUser ? this._currentUser.uid : null,
-        }, { merge: true });
+        }, { merge: true }).finally(() => this._invalidateQueryCache(uid, path));
 
         console.log(`FirebaseDataManager: 已保存接龙价格表 ${cleanRows.length} 条`);
     }
@@ -843,6 +877,7 @@ class FirebaseDataManager {
         if (!session) return;
         this._storeSubscriptions.delete(storeId); // invalidate queued callbacks first
         clearTimeout(session.timer);
+        for (const timer of session.idleTimers?.values() || []) clearTimeout(timer);
         for (const [name, unsubscribe] of session.listeners) {
             try { unsubscribe(); } catch (_) {}
             this._getCollectionState(storeId, name).ready = false;
@@ -878,7 +913,9 @@ class FirebaseDataManager {
         }
         if (!session) session = { uid: this._currentUser.uid, callbacks, listeners: new Map(), snapshots: new Map(), timer: null };
         const oldScopes = session.scopes || {};
-        session.scopes = options.scopes || {};
+        session.scopes = { ...oldScopes };
+        for (const name of Object.keys(callbacks)) session.scopes[name] = options.scopes?.[name] || null;
+        session.idleTimers ||= new Map();
         session.onError = options.onError;
         clearTimeout(session.timer);
         session.timer = null;
@@ -889,7 +926,20 @@ class FirebaseDataManager {
         while (this._storeSubscriptions.size > 2) this._closeStoreSubscription(this._storeSubscriptions.keys().next().value);
 
         for (const [name, unsubscribe] of session.listeners) {
-            if (!callbacks[name] || JSON.stringify(oldScopes[name] || null) !== JSON.stringify(session.scopes[name] || null)) {
+            if (!callbacks[name]) {
+                if (!session.idleTimers.has(name)) {
+                    const timer = setTimeout(() => {
+                        session.idleTimers.delete(name);
+                        if (session.callbacks[name]) return;
+                        unsubscribe(); session.listeners.delete(name); session.snapshots.delete(name); delete session.scopes[name];
+                        this._getCollectionState(storeId, name).ready = false;
+                    }, this._inactiveQueryTtlMs ?? 60000);
+                    timer.unref?.(); session.idleTimers.set(name, timer);
+                }
+                continue;
+            }
+            clearTimeout(session.idleTimers.get(name)); session.idleTimers.delete(name);
+            if (JSON.stringify(oldScopes[name] || null) !== JSON.stringify(session.scopes[name] || null)) {
                 unsubscribe(); session.listeners.delete(name); session.snapshots.delete(name);
                 this._getCollectionState(storeId, name).ready = false;
             }
@@ -912,6 +962,10 @@ class FirebaseDataManager {
                 let listening = true;
                 const unsubscribe = ref.onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
                     if (!listening || this._storeSubscriptions.get(storeId) !== session) return;
+                    if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) {
+                        const old = session.snapshots.get(collectionName);
+                        if (old && snapshot.docChanges?.().length) this._invalidateQueryCache(session.uid, `team/${this.teamId}/stores/${storeId}/${collectionName}`);
+                    }
                     let items;
                     if (range) {
                         // A scoped snapshot cannot establish a whole-collection write baseline.
@@ -930,11 +984,12 @@ class FirebaseDataManager {
                 }, (error) => {
                     if (!listening || this._storeSubscriptions.get(storeId) !== session) return;
                     listening = false;
+                    clearTimeout(session.idleTimers.get(collectionName)); session.idleTimers.delete(collectionName);
                     session.listeners.delete(collectionName);
                     session.snapshots.delete(collectionName);
                     this._getCollectionState(storeId, collectionName).ready = false;
                     console.error(`FirebaseDataManager: 监听 ${collectionName} 出错:`, error);
-                    session.onError?.(error, collectionName);
+                    if (session.callbacks[collectionName]) session.onError?.(error, collectionName);
                 });
 
                 if (listening) session.listeners.set(collectionName, () => { listening = false; unsubscribe(); });

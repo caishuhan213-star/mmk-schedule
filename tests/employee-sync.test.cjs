@@ -397,6 +397,7 @@ test('failed referral saves retain the previous tag and newer remote referrals c
     assert.equal(writes, 0); assert.match(alerts.at(-1), /推荐人已在其他设备更新/);
     // Editing an unrelated field leaves the new remote referral in place.
     fields.employeeReferrer.value = ''; fields.employeeNotes.value = '新备注';
+    manager.dbManager.saveEmployeeProfile = async () => { writes++; };
     await manager.saveEmployee();
     assert.equal(writes, 1); assert.equal(manager.employees[0].referrer, '点点');
 });
@@ -588,4 +589,41 @@ test('empty cache cannot erase a stored referral and late cache cannot undo an a
     assert.equal(manager.employees[0].referrer, '点点');
     await snapshot(prices(), { exists: true, fromCache: false, referrers: { [identity]: '杨总' } });
     assert.equal(manager.employees[0].referrer, '杨总');
+});
+
+test('phone and note edits save only changed profile fields without requiring shared-price reads', async () => {
+    const { manager, fields } = app(); employeeFields(fields, '');
+    manager.editingEmployeeId = manager.employees[0].id;
+    manager._editingEmployeeProfileSnapshot = { name: '小林', phone: '', notes: '', hireDate: '', photo: null };
+    manager._jlPriceReady = manager._employeeProfilesReady = false;
+    fields.employeePhone.value = '13800000000'; fields.employeeNotes.value = '新备注';
+    let saved;
+    manager.dbManager.saveEmployeeProfile = async (...args) => { saved = args; };
+    manager.dbManager.saveJlPriceTable = async () => { throw new Error('must not read prices'); };
+    const before = copy(manager.jlPriceTable);
+    await manager.saveEmployee();
+    assert.deepEqual(copy(saved[1]), { phone: '13800000000', notes: '新备注' }); assert.equal(saved[2], 'a');
+    assert.equal(manager.employees[0].phone, '13800000000'); assert.deepEqual(manager.jlPriceTable, before);
+    manager.dbManager.saveEmployeeProfile = async () => { throw Object.assign(new Error('quota'), { code: 'resource-exhausted' }); };
+    fields.employeePhone.value = '13900000000'; await manager.saveEmployee();
+    assert.equal(manager.employees[0].phone, '13800000000'); assert.equal(fields.employeePhone.value, '13900000000');
+    assert.match(manager._employeeSaveError, /员工资料尚未保存/);
+});
+
+test('profile backend merges selected fields at the original store path and batches a combined referral atomically', async () => {
+    const { manager, state } = referralBackend(); const operations = []; let commits = 0;
+    const firestore = manager._getFirestore();
+    manager._getFirestore = () => ({ ...firestore, batch: () => ({
+        set: (ref, data, options) => operations.push({ type: 'set', ref, data, options }),
+        update: (ref, field, value) => operations.push({ type: 'update', field: field.segments, value }),
+        commit: async () => { commits++; }
+    }) });
+    const paths = [];
+    manager._collectionRef = (store, collection) => ({ doc: id => { paths.push(`team/shared/stores/${store}/${collection}/${id}`); return {}; } });
+    await manager.saveEmployeeProfile({ id: 'profile-a', rosterId: 'price-A.B' }, { phone: '13800000000', name: 'must-not-rename', notes: 'note' }, 'store-a', '加加');
+    assert.equal(state.reads, 0); assert.equal(commits, 1); assert.equal(operations.length, 2);
+    assert.deepEqual(paths, ['team/shared/stores/store-a/employees/profile-a']);
+    assert.equal(operations[0].options.merge, true); assert.equal(operations[0].data.name, undefined);
+    assert.equal(operations[0].data.phone, '13800000000');
+    assert.deepEqual(copy(operations[1].field), ['referrers', 'price-A.B']); assert.equal(operations[1].value, '嘉嘉');
 });

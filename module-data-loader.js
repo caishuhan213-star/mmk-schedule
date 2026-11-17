@@ -224,7 +224,11 @@ class ModuleDataLoader {
         } });
         if (plan.tab === 'store-center') {
             const stores = m.loadStores();
-            Promise.all(stores.map(async store => [store.id, await m.dbManager.readCollectionRange('schedules', store.id)]))
+            this.summaryCachedAt = null;
+            Promise.all(stores.map(async store => [store.id, await m.dbManager.readCollectionRange('schedules', store.id, null, {
+                cacheMaxAgeMs: 60000, force,
+                onCache: time => { if (generation === this.generation) this.summaryCachedAt = Math.min(this.summaryCachedAt || time, time); }
+            })]))
                 .then(entries => {
                     if (generation !== this.generation) return;
                     m._storeSummaryRows = Object.fromEntries(entries); this.applyRows(plan, generation);
@@ -243,6 +247,7 @@ class ModuleDataLoader {
         const end = plan.range && new Date(plan.range.end + 'T00:00:00'); if (end) end.setDate(end.getDate() - 1);
         const label = plan.range ? `${plan.range.start} 至 ${ModuleDataLoader.dateKey(end)}` : '全部历史';
         this.status(plan.tab === 'management' || plan.tab === 'data-convert' ? '员工名单与价格表同步' : plan.tab === 'ai-analysis' ? '生成分析时加载所选时间范围的数据' : `统计范围：${label}`);
+        if (plan.tab === 'store-center') this.status(`统计范围：全部历史 · ${this.summaryCachedAt ? '浏览器缓存，更新于 ' + new Date(this.summaryCachedAt).toLocaleTimeString() : '已从云端更新'} · 缓存有效期 1 分钟，可点击重新加载更新`);
         if (plan.tab === 'schedule') { m.updateProjectSelectors(); m.renderTableWithCurrentFilter(); m.renderAttendanceFeeTable(); m.renderInterviewFeeTable(); m.updateStats(); }
         if (plan.tab === 'rebate') m.renderReportRebateTable();
         if (plan.tab === 'operating-cost') { m.renderOperatingCostTable(); m.updateOperatingCostStats(); m.updateOperatingCostCharts(); }

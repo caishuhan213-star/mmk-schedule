@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const Loader = require('../module-data-loader.js');
+const ConfirmedQueryCache = require('../confirmed-query-cache.js');
 const copy = value => structuredClone(value);
 const snap = (items, metadata = {}) => ({ metadata: { fromCache: false, hasPendingWrites: false, ...metadata }, forEach: fn => items.forEach(item => fn({ id: String(item.id), data: () => copy(item) })) });
 function harness() {
@@ -20,7 +21,7 @@ function harness() {
     });
     const select = (p, predicates) => (data.get(p) || []).filter(row => predicates.every(([field, op, value]) => op === '>=' ? row[field] >= value : row[field] < value));
     const db = { collection: query, batch: () => ({ set: (ref, value) => writes.push(['set', ref.path, value]), delete: ref => writes.push(['delete', ref.path]), commit: async () => {} }) };
-    const context = vm.createContext({ console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, structuredClone,
+    const context = vm.createContext({ console: { log() {}, warn() {}, error() {} }, setTimeout, clearTimeout, structuredClone, ConfirmedQueryCache,
         firebase: { apps: [{}], firestore: () => db, auth: () => ({ onAuthStateChanged: fn => { auth = fn; } }) } });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../firebase-data-manager.js'), 'utf8') + '\nglobalThis.Manager = FirebaseDataManager;', context);
     const manager = new context.Manager(); auth({ uid: 'user-a' });
@@ -31,6 +32,27 @@ function harness() {
     return h;
 }
 const november = { start: '2026-11-01', end: '2026-12-01' };
+
+test('inactive listeners expire, do not report unrelated errors, and never restore expired snapshots', async () => {
+    const h = harness(); h.manager._inactiveQueryTtlMs = 15; let errors = 0;
+    h.manager.subscribeToStore('a', { schedules() {}, operatingCosts() {} }, { scopes: { schedules: november, operatingCosts: november } });
+    h.manager.subscribeToStore('a', { employees() {} }, { scopes: { employees: null }, onError: () => errors++ });
+    h.listeners[0].error(new Error('inactive error')); assert.equal(errors, 0);
+    await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(h.listeners[1].closed, true);
+    assert.equal(h.manager._storeSubscriptions.get('a').snapshots.has('operatingCosts'), false);
+    h.manager.unsubscribeAll();
+});
+
+test('summary cache reuses a complete query, daily writes invalidate it, and exports stay fresh', async () => {
+    const h = harness(), options = { cacheMaxAgeMs: 60000 };
+    h.seed('a', 'schedules', [{ id: 'history', scheduleDate: '2020-01-01' }]);
+    await h.manager.readCollectionRange('schedules', 'a', null, options);
+    await h.manager.readCollectionRange('schedules', 'a', null, options); assert.equal(h.reads.length, 1);
+    await h.manager.saveRecord('schedules', { id: 'new', scheduleDate: '2026-11-17' }, 'a');
+    await h.manager.readCollectionRange('schedules', 'a', null, options); assert.equal(h.reads.length, 2);
+    await h.manager.readCollectionRange('schedules', 'a'); assert.equal(h.reads.length, 3);
+    await h.manager.readCollectionRange('schedules', 'a', null, { ...options, force: true }); assert.equal(h.reads.length, 4);
+});
 
 test('calendar month bounds cover leap February, December, and an exclusive end', () => {
     assert.deepEqual(Loader.monthRange('2024-02'), { start: '2024-02-01', end: '2024-03-01' });
@@ -51,13 +73,15 @@ test('month listeners exclude both earlier history and the first day of the next
     h.manager.unsubscribeAll();
 });
 
-test('switching to employees closes dated listeners and performs no history read', () => {
+test('briefly switching to employees reuses dated listeners without reading history again', () => {
     const h = harness();
     h.manager.subscribeToStore('a', { schedules() {}, operatingCosts() {} }, { scopes: { schedules: november, operatingCosts: november } });
     h.manager.subscribeToStore('a', { employees() {} }, { scopes: { employees: null } });
-    assert.ok(h.listeners.slice(0, 2).every(l => l.closed));
-    assert.equal(h.listeners.filter(l => !l.closed).length, 1);
+    assert.ok(h.listeners.slice(0, 2).every(l => !l.closed));
+    assert.equal(h.listeners.filter(l => !l.closed).length, 3);
     assert.ok(h.listeners.at(-1).path.endsWith('/employees')); assert.equal(h.reads.length, 0);
+    h.manager.subscribeToStore('a', { schedules() {}, operatingCosts() {} }, { scopes: { schedules: november, operatingCosts: november } });
+    assert.equal(h.listeners.length, 3);
     h.manager.unsubscribeAll();
 });
 

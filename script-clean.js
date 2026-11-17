@@ -733,7 +733,7 @@ class ScheduleManager {
             this._loadStoresFromFirestore().then(() => {
                 // 店铺加载完成后再订阅当前店铺的数据
                 this.dataLoader.started = true;
-                this.dataLoader.refresh(true);
+                this.dataLoader.refresh();
             });
         });
     }
@@ -4687,6 +4687,13 @@ ${photoStatus}`;
             }
             return;
         }
+        if (editing && name === previous.name) {
+            if (phone && !this.validatePhone(phone)) { alert('请输入正确的手机号码格式'); return; }
+            if (await this._saveEmployeeProfile(old, fields, previous, referrer)) {
+                this.closeEmployeeModal(); this.showSuccessMessage('员工资料已保存');
+            }
+            return;
+        }
         if (!this._requireEmployeeSyncReady()) return;
         if (!name) { alert('请输入员工姓名'); return; }
         if (phone && !this.validatePhone(phone)) { alert('请输入正确的手机号码格式'); return; }
@@ -4726,7 +4733,6 @@ ${photoStatus}`;
     // 编辑员工
     editEmployee(id, referrerOnly = false) {
         if (this._jlPriceWritePending) return;
-        if (!referrerOnly && !this._requireEmployeeSyncReady()) return;
         const employee = this.employees.find(e => e.id === id);
         if (!employee) {
             alert('未找到要编辑的员工');
@@ -10320,6 +10326,30 @@ ${photoStatus}`;
     }
 
     async _saveEmployeeReferrer(employeeId, referrer) {
+        return this._saveEmployeeChange(() => this.dbManager.saveEmployeeReferrer(employeeId, referrer), () => {
+            this._applyEmployeeReferrers({ ...this._employeeReferrers, [employeeId]: referrer });
+            this._employeeReferrersReady = true;
+        }, '推荐人');
+    }
+
+    async _saveEmployeeProfile(employee, fields, previous, referrer) {
+        const store = this.currentStoreId;
+        const changes = Object.fromEntries(['phone', 'hireDate', 'notes', 'photo']
+            .filter(key => fields[key] !== (previous[key] || (key === 'photo' ? null : ''))).map(key => [key, fields[key]]));
+        const referral = referrer !== (employee.referrer || '') ? referrer : undefined;
+        return this._saveEmployeeChange(() => this.dbManager.saveEmployeeProfile(employee, changes, store, referral), () => {
+            if (referral !== undefined) {
+                this._applyEmployeeReferrers({ ...this._employeeReferrers, [employee.rosterId]: referral });
+                this._employeeReferrersReady = true;
+            }
+            if (store !== this.currentStoreId) return;
+            const latest = this._employeeProfiles.find(item => item.id === employee.id) || employee;
+            this._employeeProfiles = EmployeeRoster.mergeProfiles(this._employeeProfiles, [{ ...latest, ...changes }]);
+            this._cacheEmployeeProfiles();
+        }, '员工资料');
+    }
+
+    async _saveEmployeeChange(save, apply, label) {
         if (this._jlPriceWritePending) return false;
         this._jlPriceWritePending = true;
         const uid = this.dbManager._currentUser?.uid;
@@ -10330,10 +10360,9 @@ ${photoStatus}`;
         const slow = setTimeout(() => this._setEmployeeFormError('正在等待云端确认，请保持当前窗口打开。'), 12000);
         try {
             if (typeof navigator !== 'undefined' && navigator.onLine === false) throw Object.assign(new Error('网络已断开'), { code: 'unavailable' });
-            await this.dbManager.saveEmployeeReferrer(employeeId, referrer);
+            await save();
             if (uid !== this.dbManager._currentUser?.uid) return false;
-            this._applyEmployeeReferrers({ ...this._employeeReferrers, [employeeId]: referrer });
-            this._employeeReferrersReady = true;
+            apply();
             this._refreshEmployeeRoster();
             this._setEmployeeFormError('');
             window.firebaseManager?.setEmployeeSaveError?.('');
@@ -10347,7 +10376,7 @@ ${photoStatus}`;
                 'unavailable': '暂时无法连接云数据库，请检查网络。',
                 'not-found': '云端员工名单尚未建立，请先完成名单同步。'
             }[code] || error.message || '请稍后重试。';
-            this._employeeSaveError = `保存失败：${reason} 推荐人尚未保存。`;
+            this._employeeSaveError = `保存失败：${reason} ${label}尚未保存。`;
             this._setEmployeeFormError(this._employeeSaveError + ' 表单内容仍保留在当前窗口，请勿刷新。');
             window.firebaseManager?.setEmployeeSaveError?.(code === 'resource-exhausted' ? '云端额度受限' : '员工保存失败');
             return false;
