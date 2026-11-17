@@ -32,6 +32,10 @@ class FirebaseDataManager {
     // 结束导入模式（恢复 onSnapshot 正常工作）
     endImport() {
         this._importing = false;
+        this._replaceImportedCollections = false;
+        const session = this._storeSubscriptions.get(this._activeStoreId);
+        if (session) for (const name of session.snapshots.keys()) this._deliverStoreSnapshot(this._activeStoreId, session, name);
+        this.onImportEnd?.();
     }
 
     // 等待 Firebase SDK 和认证就绪
@@ -472,6 +476,11 @@ class FirebaseDataManager {
         }
 
         const itemArray = Array.isArray(items) ? items : [];
+        // A month/module view is never a replacement for the entire collection.
+        // Ordinary imports upsert; only an explicitly confirmed restore replaces.
+        if (this._dateField(collectionName) && !this._replaceImportedCollections) {
+            return this._setDocuments(collectionName, itemArray, storeId);
+        }
         const payload = new Map();
 
         itemArray.forEach(item => {
@@ -527,6 +536,52 @@ class FirebaseDataManager {
         if (!this._canOperate()) throw Object.assign(new Error('请登录后再保存'), { code: 'unauthenticated' });
         if (!storeId) throw new Error('没有选择店铺，无法保存');
         if (!['schedules', 'attendanceFees', 'interviewFees', 'operatingCosts', 'reportRebates'].includes(collection)) throw new Error('不支持的记录类型');
+    }
+
+    _dateField(collection) {
+        return collection === 'schedules' ? 'scheduleDate' :
+            ['attendanceFees', 'interviewFees', 'operatingCosts', 'reportRebates'].includes(collection) ? 'date' : null;
+    }
+
+    _rangeRef(storeId, collection, range) {
+        let ref = this._collectionRef(storeId, collection);
+        if (!range) return ref;
+        const field = this._dateField(collection);
+        if (!field || !/^\d{4}-\d{2}-\d{2}$/.test(range.start) || !/^\d{4}-\d{2}-\d{2}$/.test(range.end) || range.start >= range.end) {
+            throw new Error('日期范围无效，请重新选择');
+        }
+        return ref.where(field, '>=', range.start).where(field, '<', range.end);
+    }
+
+    // Explicit exports/history reads fail visibly; never turn a failed read into [].
+    async readCollectionRange(collection, storeId, range = null) {
+        if (!this._canOperate()) throw new Error('请登录后加载数据');
+        const uid = this._currentUser.uid;
+        const session = this._storeSubscriptions.get(storeId);
+        const cached = session?.snapshots.get(collection);
+        const scope = session?.scopes?.[collection] || null;
+        const covers = !scope || (range && scope.start <= range.start && scope.end >= range.end);
+        let items;
+        if (covers && cached && !cached.metadata.fromCache && !cached.metadata.pending && session.listeners.has(collection)) {
+            items = cached.items;
+        } else {
+            const key = `${this._collectionKey(storeId, collection)}::${JSON.stringify(range)}::${uid}`;
+            if (!this._collectionReads.has(key)) {
+                const request = this._rangeRef(storeId, collection, range).get({ source: 'server' }).then(snapshot => {
+                    if (snapshot.metadata?.fromCache || snapshot.metadata?.hasPendingWrites) throw new Error('数据尚未获得云端确认，请联网后重试');
+                    const rows = [];
+                    snapshot.forEach(doc => rows.push(this._stripInternalFields(doc.data())));
+                    return rows;
+                }).finally(() => {
+                    if (this._collectionReads.get(key) === request) this._collectionReads.delete(key);
+                });
+                this._collectionReads.set(key, request);
+            }
+            items = await this._collectionReads.get(key);
+        }
+        if (this._currentUser?.uid !== uid) throw new Error('登录状态已变化，请重试');
+        const field = this._dateField(collection);
+        return this._copyCollectionItems(range ? items.filter(row => row[field] >= range.start && row[field] < range.end) : items);
     }
 
     // Daily edits never reconcile/delete a whole collection or prime it with a full read.
@@ -781,7 +836,7 @@ class FirebaseDataManager {
         }
     }
 
-    subscribeToStore(storeId, callbacks) {
+    subscribeToStore(storeId, callbacks, options = {}) {
         if (!storeId) {
             console.warn('FirebaseDataManager: 无 storeId，跳过订阅');
             return;
@@ -795,7 +850,8 @@ class FirebaseDataManager {
 
         const previousId = this._activeStoreId;
         const previous = this._storeSubscriptions.get(previousId);
-        if (previous && previousId !== storeId) {
+        if (options.scopes && previousId !== storeId) this._closeStoreSubscription(previousId);
+        if (previous && previousId !== storeId && !options.scopes) {
             clearTimeout(previous.timer);
             previous.timer = setTimeout(() => {
                 if (this._activeStoreId !== previousId) this._closeStoreSubscription(previousId);
@@ -808,6 +864,9 @@ class FirebaseDataManager {
             session = null;
         }
         if (!session) session = { uid: this._currentUser.uid, callbacks, listeners: new Map(), snapshots: new Map(), timer: null };
+        const oldScopes = session.scopes || {};
+        session.scopes = options.scopes || {};
+        session.onError = options.onError;
         clearTimeout(session.timer);
         session.timer = null;
         session.callbacks = callbacks;
@@ -817,7 +876,7 @@ class FirebaseDataManager {
         while (this._storeSubscriptions.size > 2) this._closeStoreSubscription(this._storeSubscriptions.keys().next().value);
 
         for (const [name, unsubscribe] of session.listeners) {
-            if (!callbacks[name]) {
+            if (!callbacks[name] || JSON.stringify(oldScopes[name] || null) !== JSON.stringify(session.scopes[name] || null)) {
                 unsubscribe(); session.listeners.delete(name); session.snapshots.delete(name);
                 this._getCollectionState(storeId, name).ready = false;
             }
@@ -833,15 +892,24 @@ class FirebaseDataManager {
             }
 
             try {
-                const ref = this._collectionRef(storeId, collectionName);
+                const range = session.scopes[collectionName] || null;
+                const ref = this._rangeRef(storeId, collectionName, range);
                 if (!ref) continue;
 
                 let listening = true;
                 const unsubscribe = ref.onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
                     if (!listening || this._storeSubscriptions.get(storeId) !== session) return;
-                    const items = this._updateCollectionStateFromSnapshot(storeId, collectionName, snapshot);
+                    let items;
+                    if (range) {
+                        // A scoped snapshot cannot establish a whole-collection write baseline.
+                        this._getCollectionState(storeId, collectionName).ready = false;
+                        items = [];
+                        snapshot.forEach(doc => items.push(this._stripInternalFields(doc.data())));
+                    } else {
+                        items = this._updateCollectionStateFromSnapshot(storeId, collectionName, snapshot);
+                    }
                     session.snapshots.set(collectionName, { items, metadata: {
-                        fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites
+                        fromCache: snapshot.metadata.fromCache, pending: snapshot.metadata.hasPendingWrites, range
                     } });
                     this._deliverStoreSnapshot(storeId, session, collectionName);
 
@@ -853,12 +921,14 @@ class FirebaseDataManager {
                     session.snapshots.delete(collectionName);
                     this._getCollectionState(storeId, collectionName).ready = false;
                     console.error(`FirebaseDataManager: 监听 ${collectionName} 出错:`, error);
+                    session.onError?.(error, collectionName);
                 });
 
                 if (listening) session.listeners.set(collectionName, () => { listening = false; unsubscribe(); });
                 else unsubscribe();
             } catch (error) {
                 console.error(`FirebaseDataManager: 订阅 ${collectionName} 失败:`, error);
+                session.onError?.(error, collectionName);
             }
         }
 

@@ -5,6 +5,12 @@ class StoreCenterManager {
         this.stores = [];
         this.editingStoreId = null;
         this._unsubscribeStores = null;
+        this._summaryRows = {};
+        this._summaryTodayRows = {};
+        this._summaryReady = false;
+        this._summaryGeneration = 0;
+        this._summaryMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+        this.setupSummaryScope();
 
         // 先用 localStorage 快速渲染（可能为空）
         const cached = localStorage.getItem('stores');
@@ -25,6 +31,9 @@ class StoreCenterManager {
                         console.log('StoreCenterManager: 用户已登录', user.email);
                         this._subscribeToStores();
                     } else {
+                        this._summaryGeneration++;
+                        this._summaryRows = {}; this._summaryReady = false;
+                        this.renderStoreGrid(); this.updateOverviewStats();
                         console.log('StoreCenterManager: 用户已登出');
                         if (this._unsubscribeStores) {
                             this._unsubscribeStores();
@@ -68,12 +77,71 @@ class StoreCenterManager {
             localStorage.setItem('stores', JSON.stringify(stores));
             this.renderStoreGrid();
             this.updateOverviewStats();
+            this.loadSummaryScope();
         }, (error) => {
             console.error('StoreCenterManager: 监听店铺失败:', error);
         });
     }
 
     // 保存单个店铺到 Firestore
+    setupSummaryScope() {
+        const bar = document.createElement('div');
+        bar.className = 'module-data-status';
+        const label = document.createElement('label'); label.textContent = '统计月份 ';
+        const input = document.createElement('input'); input.type = 'month'; input.value = this._summaryMonth; input.setAttribute('aria-label', '店铺统计月份');
+        input.addEventListener('change', () => { if (input.value) { this._summaryMonth = input.value; this.loadSummaryScope(); } });
+        label.append(input); bar.append(label);
+        const all = document.createElement('button'); all.className = 'btn btn-secondary'; all.textContent = '全部历史';
+        all.addEventListener('click', () => { this._summaryMonth = null; this.loadSummaryScope(); }); bar.append(all);
+        const retry = document.createElement('button'); retry.className = 'btn btn-secondary'; retry.textContent = '重新加载';
+        retry.addEventListener('click', () => this.loadSummaryScope()); bar.append(retry);
+        const status = document.createElement('span'); status.id = 'storeSummaryStatus'; status.setAttribute('role', 'status'); status.textContent = '正在连接云端…'; bar.append(status);
+        document.querySelector('.overview-stats').before(bar);
+    }
+
+    async loadSummaryScope() {
+        const db = this._db(), uid = firebase.auth().currentUser?.uid;
+        if (!db || !uid) return;
+        const generation = ++this._summaryGeneration, month = this._summaryMonth;
+        this._summaryReady = false; this.renderStoreGrid(); this.updateOverviewStats();
+        const status = document.getElementById('storeSummaryStatus');
+        status.textContent = '正在加载所选范围…';
+        try {
+            const price = await db.collection('team/shared/settings').doc('jlPriceTable').get({ source: 'server' });
+            const employees = new Set((price.data()?.rows || []).map(row => row.name).filter(Boolean)).size;
+            const entries = await Promise.all(this.stores.map(async store => {
+                let query = db.collection(`team/shared/stores/${store.id}/schedules`);
+                if (month) {
+                    const [year, number] = month.split('-').map(Number);
+                    const next = new Date(year, number, 1);
+                    const end = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-01';
+                    query = query.where('scheduleDate', '>=', month + '-01').where('scheduleDate', '<', end);
+                }
+                const snapshot = await query.get({ source: 'server' });
+                if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) throw new Error('等待云端确认');
+                const rows = []; snapshot.forEach(doc => rows.push(doc.data()));
+                const now = new Date(), today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+                let todayRows = rows.filter(row => row.scheduleDate === today);
+                if (month && month !== today.slice(0, 7)) {
+                    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+                    const end = tomorrow.getFullYear() + '-' + String(tomorrow.getMonth() + 1).padStart(2, '0') + '-' + String(tomorrow.getDate()).padStart(2, '0');
+                    const current = await db.collection(`team/shared/stores/${store.id}/schedules`).where('scheduleDate', '>=', today).where('scheduleDate', '<', end).get({ source: 'server' });
+                    if (current.metadata.fromCache || current.metadata.hasPendingWrites) throw new Error('等待云端确认');
+                    todayRows = []; current.forEach(doc => todayRows.push(doc.data()));
+                }
+                return [store.id, { rows, todayRows }];
+            }));
+            if (generation !== this._summaryGeneration || uid !== firebase.auth().currentUser?.uid) return;
+            this._summaryRows = Object.fromEntries(entries.map(([id, value]) => [id, value.rows]));
+            this._summaryTodayRows = Object.fromEntries(entries.map(([id, value]) => [id, value.todayRows]));
+            this._summaryEmployeeCount = employees; this._summaryReady = true;
+            status.textContent = `统计范围：${month || '全部历史'}`;
+            this.renderStoreGrid(); this.updateOverviewStats();
+        } catch (error) {
+            if (generation === this._summaryGeneration) status.textContent = '统计加载失败，请检查网络或额度后重新加载。';
+        }
+    }
+
     async _saveStoreToFirestore(store) {
         const db = this._db();
         if (!db) { console.warn('Firestore 未就绪'); return; }
@@ -134,8 +202,8 @@ class StoreCenterManager {
                             <div class="value">${stats.todayOrders}单</div>
                         </div>
                         <div class="store-stat-item">
-                            <div class="label">总营收</div>
-                            <div class="value">¥${stats.totalRevenue.toLocaleString()}</div>
+                            <div class="label">${this._summaryMonth ? this._summaryMonth + ' 营收' : '历史总营收'}</div>
+                            <div class="value">${this._summaryReady ? '¥' + stats.totalRevenue.toLocaleString() : '待加载'}</div>
                         </div>
                         <div class="store-stat-item">
                             <div class="label">员工数</div>
@@ -149,14 +217,13 @@ class StoreCenterManager {
 
     // 获取店铺统计数据
     getStoreStats(storeId) {
-        const schedules = this.getStoreData(storeId, 'schedules') || [];
-        const employees = this.getStoreData(storeId, 'employees') || [];
+        const schedules = this._summaryRows[storeId] || [];
         
         // 今日日期
         const today = new Date().toISOString().split('T')[0];
         
         // 今日订单
-        const todaySchedules = schedules.filter(s => s.scheduleDate === today);
+        const todaySchedules = this._summaryTodayRows[storeId] || [];
         const todayRevenue = todaySchedules.reduce((sum, s) => sum + (parseFloat(s.payment) || 0), 0);
         const todayOrders = todaySchedules.length;
         
@@ -167,7 +234,7 @@ class StoreCenterManager {
             todayRevenue,
             todayOrders,
             totalRevenue,
-            employeeCount: employees.length
+            employeeCount: this._summaryEmployeeCount || 0
         };
     }
 
@@ -180,6 +247,12 @@ class StoreCenterManager {
 
     // 更新总览统计
     updateOverviewStats() {
+        if (!this._summaryReady) {
+            for (const id of ['todayRevenue', 'todayOrders', 'totalEmployees']) document.getElementById(id).textContent = '待加载';
+            document.querySelectorAll('.store-card-stats .value').forEach(el => { el.textContent = '待加载'; });
+            document.getElementById('totalStores').textContent = this.stores.length;
+            return;
+        }
         let totalRevenue = 0;
         let totalOrders = 0;
         let totalEmployees = 0;
@@ -194,7 +267,7 @@ class StoreCenterManager {
         document.getElementById('totalStores').textContent = this.stores.length;
         document.getElementById('todayRevenue').textContent = `¥${totalRevenue.toLocaleString()}`;
         document.getElementById('todayOrders').textContent = `${totalOrders}单`;
-        document.getElementById('totalEmployees').textContent = `${totalEmployees}人`;
+        document.getElementById('totalEmployees').textContent = `${this._summaryEmployeeCount || 0}人`;
     }
 
     // 打开添加店铺模态框

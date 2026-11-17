@@ -695,6 +695,7 @@ class ScheduleManager {
         this.customerStatusBarChart = null;
         this.operatingCostCategoryChart = null;
         this.operatingCostTrendChart = null;
+        this.dataLoader = new ModuleDataLoader(this);
         this.initializeEventListeners();
         // 默认筛选到今天，避免一次性渲染全部数据（1000+条很慢）
         const today = new Date().toISOString().split('T')[0];
@@ -721,6 +722,7 @@ class ScheduleManager {
 
         // 初始化自动导入
         this.initAutoImport();
+        this.dataLoader.setup();
 
         // Firebase 登录后，通过 onSnapshot 实时同步数据
         this.dbManager.onReady(() => {
@@ -729,7 +731,8 @@ class ScheduleManager {
             // 先从 Firestore 加载店铺列表（localStorage 可能是新域名/空的）
             this._loadStoresFromFirestore().then(() => {
                 // 店铺加载完成后再订阅当前店铺的数据
-                this.dbManager.subscribeToStore(this.currentStoreId, this._getSubscribeCallbacks());
+                this.dataLoader.started = true;
+                this.dataLoader.refresh(true);
             });
         });
     }
@@ -1413,7 +1416,7 @@ class ScheduleManager {
 
     // 切换店铺
     switchStore(storeId) {
-        if (this._jlPriceWritePending || this._recordSavePending) { this.updateStoreSelector(); alert('数据正在保存，请稍后切换店铺'); return; }
+        if (this._jlPriceWritePending || this._recordSavePending || this._dataActionPending || this.dbManager?._importing) { this.updateStoreSelector(); alert('数据正在处理，请稍后切换店铺'); return; }
         const stores = this.loadStores();
         const store = stores.find(s => s.id === storeId);
         
@@ -1438,7 +1441,7 @@ class ScheduleManager {
         this.refreshCurrentStoreView();
 
         if (this.dbManager && this.dbManager.subscribeToStore) {
-            this.dbManager.subscribeToStore(this.currentStoreId, this._getSubscribeCallbacks());
+            this.dataLoader.refresh(true);
         }
 
         this.showSuccessMessage(`已切换到店铺：${store.name}`);
@@ -1741,7 +1744,7 @@ class ScheduleManager {
     // 获取店铺统计数据
     getStoreStats(storeId) {
         const prefix = `store_${storeId}_`;
-        const schedules = JSON.parse(localStorage.getItem(prefix + 'schedules') || '[]');
+        const schedules = this._storeSummaryRows?.[storeId] || JSON.parse(localStorage.getItem(prefix + 'schedules') || '[]');
         
         const totalRevenue = schedules.reduce((sum, s) => sum + (parseFloat(s.payment) || 0), 0);
         
@@ -1800,7 +1803,7 @@ class ScheduleManager {
         stores.forEach(store => {
             const stats = this.getStoreStats(store.id);
             const prefix = `store_${store.id}_`;
-            const schedules = JSON.parse(localStorage.getItem(prefix + 'schedules') || '[]');
+            const schedules = this._storeSummaryRows?.[store.id] || JSON.parse(localStorage.getItem(prefix + 'schedules') || '[]');
             const employees = JSON.parse(localStorage.getItem(prefix + 'employees') || '[]');
             
             totalRevenue += stats.totalRevenue;
@@ -2503,11 +2506,13 @@ class ScheduleManager {
     }
 
     _cacheConfirmedRecords(collection, storeId) {
+        if (this.dataLoader) return; // Scoped records must not overwrite a legacy full-history cache.
         try { localStorage.setItem(`store_${storeId}_${collection}`, JSON.stringify(this[collection])); }
         catch (error) { console.warn('云端已保存，本地缓存更新失败', error); }
     }
 
     _renderConfirmedRecords(collection) {
+        this.dataLoader?.clipCurrentRows();
         const render = {
             schedules: ['renderTableWithCurrentFilter', 'renderEmployeeCommissionSummary'],
             attendanceFees: ['renderAttendanceFeeTable'], interviewFees: ['renderInterviewFeeTable'],
@@ -2520,6 +2525,7 @@ class ScheduleManager {
     }
 
     async _runConfirmedRecordSave({ formId = '', collection, write, apply, success, afterSave }) {
+        if (this._dataActionPending) return false;
         if (this._recordSavePending || this._jlPriceWritePending) return false;
         if (this.dbManager._importing) { alert('正在导入数据，请完成后再保存'); return false; }
         const storeId = this.currentStoreId;
@@ -2585,6 +2591,7 @@ class ScheduleManager {
     }
 
     async _deleteDailyRecords(collection, ids, success) {
+        if (this.dataLoader && !this.dataLoader.canRender([this.dataLoader.tab()])) { alert('所选范围尚未加载完成，请加载成功后再删除'); return false; }
         return this._runConfirmedRecordSave({ collection, success,
             write: storeId => this.dbManager.deleteRecords(collection, ids, storeId, confirmedIds => {
                 // Large clears can span batches. Reflect only batches the server confirmed.
@@ -2602,6 +2609,7 @@ class ScheduleManager {
     }
 
     async addSchedule() {
+        if (this.dataLoader && !await this.dataLoader.prepareSave('schedules', 'scheduleDate')) return;
         if (this._recordSavePending) return;
         const formData = {
             id: String(this._recordDraftId('scheduleForm')),
@@ -2836,6 +2844,7 @@ class ScheduleManager {
 
     // 更新排班记录
     async updateSchedule() {
+        if (this.dataLoader && !await this.dataLoader.prepareSave('schedules', 'editScheduleDate')) return;
         if (this._recordSavePending) return;
         if (!this.editingId) {
             alert('编辑状态异常');
@@ -2920,7 +2929,7 @@ class ScheduleManager {
 
     // 检查编辑时的时间段冲突
     hasEditTimeConflict(newData) {
-        return this.schedules.some(existingSchedule => {
+        return [...(this._conflictCheckSchedules || []), ...this.schedules].some(existingSchedule => {
             // 排除当前编辑的记录
             if (existingSchedule.id === this.editingId) {
                 return false;
@@ -2998,17 +3007,20 @@ class ScheduleManager {
                 break;
         }
         
-        // 清除筛选值
+        // Switching view mode keeps a bounded default; clearing explicitly opens all history.
         document.getElementById('filterDate').value = '';
         document.getElementById('filterWeek').value = '';
         document.getElementById('filterMonth').value = '';
+        const today = new Date();
+        if (mode === 'day') document.getElementById('filterDate').value = ModuleDataLoader.dateKey(today);
+        if (mode === 'week') document.getElementById('filterWeek').value = ModuleDataLoader.weekKey(today);
+        if (mode === 'month') document.getElementById('filterMonth').value = ModuleDataLoader.dateKey(today).slice(0, 7);
         
         // 重新渲染表格和更新统计
         this.renderTable();
         this.updateStats();
         
-        // 清除当前筛选并重新渲染
-        this.clearFilter();
+        this.dataLoader?.refresh();
     }
 
     // 按周筛选
@@ -3067,10 +3079,9 @@ class ScheduleManager {
 
     // 获取周的开始日期
     getWeekStartDate(year, week) {
-        const date = new Date(year, 0, 1);
-        const dayOfWeek = date.getDay();
-        const daysToAdd = (week - 1) * 7 - dayOfWeek + 1;
-        date.setDate(daysToAdd);
+        if (typeof year === 'string' && year.includes('-W')) [year, week] = year.split('-W').map(Number);
+        const date = new Date(Number(year), 0, 4);
+        date.setDate(date.getDate() - ((date.getDay() + 6) % 7) + (Number(week) - 1) * 7);
         return date;
     }
 
@@ -3365,6 +3376,7 @@ class ScheduleManager {
 
     // 导出数据
     exportData() {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData(['schedules'], null, context => context.exportData());
         if (this.schedules.length === 0) {
             alert('暂无数据可导出');
             return;
@@ -3403,6 +3415,7 @@ class ScheduleManager {
 
     // 完整数据备份 - 导出所有数据到本地JSON文件
     backupAllData() {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData([...ModuleDataLoader.dated, 'employees', 'projects', 'salaryTiers'], null, context => context.backupAllData());
         try {
             // 收集所有数据
             const allData = {
@@ -3482,6 +3495,7 @@ class ScheduleManager {
 
     // 全店铺数据备份 - 导出所有店铺的数据
     backupAllStoresData() {
+        if (this.dataLoader && !this._backupStoresData) return this.dataLoader.backupStores();
         try {
             const stores = this.loadStores();
             
@@ -3512,7 +3526,7 @@ class ScheduleManager {
             // 遍历每个店铺，收集数据
             stores.forEach(store => {
                 const prefix = `store_${store.id}_`;
-                const storeData = {
+                const storeData = this._backupStoresData?.[store.id] || {
                     schedules: JSON.parse(localStorage.getItem(prefix + 'schedules') || '[]'),
                     employees: JSON.parse(localStorage.getItem(prefix + 'employees') || '[]'),
                     projects: JSON.parse(localStorage.getItem(prefix + 'projects') || '[]'),
@@ -3684,6 +3698,7 @@ class ScheduleManager {
                         }
                     }
                     
+                    if (this.dataLoader && !await this.dataLoader.prepareImport([...ModuleDataLoader.dated, 'employees', 'projects', 'salaryTiers'])) return;
                     // 合并辅助函数：按 id 去重，当前已有的记录优先保留
                     const mergeById = (current, incoming) => {
                         if (!incoming || incoming.length === 0) return current;
@@ -3727,6 +3742,7 @@ class ScheduleManager {
 
                     // 导入模式：暂停 onSnapshot 回调，防止写入过程中旧快照覆盖内存数据
                     this.dbManager.beginImport();
+                    this.dbManager._replaceImportedCollections = !isMerge;
                     try {
                         await this.saveSchedules();
                         await this.saveProjects();
@@ -3851,7 +3867,7 @@ ${photoStatus}`;
     }
 
     hasTimeConflict(newSchedule) {
-        return this.schedules.some(existingSchedule => {
+        return [...(this._conflictCheckSchedules || []), ...this.schedules].some(existingSchedule => {
             // 检查是否是同一天和同一个员工
             if (existingSchedule.scheduleDate !== newSchedule.scheduleDate || 
                 existingSchedule.employeeName !== newSchedule.employeeName) {
@@ -3999,6 +4015,7 @@ ${photoStatus}`;
     }
 
     cacheSchedules() {
+        if (this.dataLoader) return;
         try { localStorage.setItem(this.getStorageKey('schedules'), JSON.stringify(this.schedules)); } catch (e) {}
     }
 
@@ -4042,6 +4059,7 @@ ${photoStatus}`;
 
     // 导出排班数据到文件（手动导出）
     exportSchedulesToFile() {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData(['schedules'], null, context => context.exportSchedulesToFile());
         if (this.schedules.length === 0) {
             alert('暂无排班数据可导出！');
             return;
@@ -4082,6 +4100,7 @@ ${photoStatus}`;
             }
             const isMerge = modeInput === '1';
 
+            if (this.dataLoader && !await this.dataLoader.prepareImport(['schedules'])) return;
             let addedCount = 0;
             if (isMerge) {
                 const existingIds = new Set(this.schedules.map(r => r.id));
@@ -4094,6 +4113,7 @@ ${photoStatus}`;
 
             // 导入模式防止 onSnapshot 覆盖
             this.dbManager.beginImport();
+            this.dbManager._replaceImportedCollections = !isMerge;
             try {
                 await this.saveSchedules();
                 this.renderTableWithCurrentFilter();
@@ -4254,6 +4274,7 @@ ${photoStatus}`;
     // 保存坐班费用数据到 Firestore
     async saveAttendanceFees() {
         await this.dbManager.saveAttendanceFees(this.attendanceFees, this.currentStoreId);
+        if (this.dataLoader) return;
         try { localStorage.setItem(this.getStorageKey('attendanceFees'), JSON.stringify(this.attendanceFees)); } catch (e) {}
     }
 
@@ -4273,6 +4294,7 @@ ${photoStatus}`;
     // 保存面试费用数据到 Firestore
     async saveInterviewFees() {
         await this.dbManager.saveInterviewFees(this.interviewFees, this.currentStoreId);
+        if (this.dataLoader) return;
         try { localStorage.setItem(this.getStorageKey('interviewFees'), JSON.stringify(this.interviewFees)); } catch (e) {}
     }
 
@@ -4294,6 +4316,7 @@ ${photoStatus}`;
     // 保存运营成本数据到 Firestore
     async saveOperatingCosts() {
         await this.dbManager.saveOperatingCosts(this.operatingCosts, this.currentStoreId);
+        if (this.dataLoader) return;
         try { localStorage.setItem(this.getStorageKey('operatingCosts'), JSON.stringify(this.operatingCosts)); } catch (e) {}
     }
 
@@ -4312,6 +4335,7 @@ ${photoStatus}`;
     // 保存报告返现数据到 Firestore
     async saveReportRebates() {
         await this.dbManager.saveReportRebates(this.reportRebates, this.currentStoreId);
+        if (this.dataLoader) return;
         try { localStorage.setItem(this.getStorageKey('reportRebates'), JSON.stringify(this.reportRebates)); } catch (e) {}
     }
 
@@ -4936,6 +4960,7 @@ ${photoStatus}`;
 
     // 添加坐班费用
     async addAttendanceFee() {
+        if (this.dataLoader && !await this.dataLoader.prepareSave('attendanceFees', 'attendanceDate')) return;
         if (this._recordSavePending) return;
         const formData = {
             date: document.getElementById('attendanceDate').value,
@@ -4948,7 +4973,7 @@ ${photoStatus}`;
         let existing = this.attendanceFees.find(item => item.id === this.editingAttendanceFeeId);
         if (this.editingAttendanceFeeId && !existing) { alert('记录已不存在，请重新选择'); return; }
         if (!existing) {
-            existing = this.attendanceFees.find(item => item.date === formData.date && item.employeeName === formData.employeeName);
+            existing = (this._validationAttendanceFees || this.attendanceFees).find(item => item.date === formData.date && item.employeeName === formData.employeeName);
             if (existing && !confirm('该员工在该日期已有坐班费用记录，是否要更新？')) return;
         }
         const now = new Date().toISOString();
@@ -5305,6 +5330,7 @@ ${photoStatus}`;
 
     /** 导出 CSV（可直接用 Excel 打开） */
     exportOperatingCostCSV() {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData(['operatingCosts'], this.dataLoader.costExportRange(), context => context.exportOperatingCostCSV());
         const result = this._getFilteredCostsForExport();
         if (!result) return;
         const { filtered, startVal, endVal } = result;
@@ -5341,8 +5367,18 @@ ${photoStatus}`;
 
     /** 打印/导出 PDF（打开新窗口 → 触发浏览器打印对话框） */
     exportOperatingCostPrint() {
+        if (this.dataLoader && !this._completeDataAction) {
+            if (this._dataActionPending || this._recordSavePending) return;
+            const printWindow = window.open('', '_blank', 'width=900,height=700');
+            if (!printWindow) { alert('请允许打开报表窗口后重试'); return; }
+            printWindow.document.body.textContent = '正在加载报表数据…';
+            return this.dataLoader.withData(['operatingCosts'], this.dataLoader.costExportRange(), context => {
+                context._printWindow = printWindow;
+                return context.exportOperatingCostPrint();
+            }).then(result => { if (result === false && !printWindow.closed) printWindow.close(); });
+        }
         const result = this._getFilteredCostsForExport();
-        if (!result) return;
+        if (!result) { this._printWindow?.close(); return false; }
         const { filtered, startVal, endVal } = result;
 
         const total = filtered.reduce((s, c) => s + c.amount, 0);
@@ -5426,7 +5462,7 @@ ${photoStatus}`;
 <script>window.onload = () => window.print();<\/script>
 </body></html>`;
 
-        const printWin = window.open('', '_blank', 'width=900,height=700');
+        const printWin = this._printWindow || window.open('', '_blank', 'width=900,height=700');
         if (printWin) {
             printWin.document.write(html);
             printWin.document.close();
@@ -5456,7 +5492,10 @@ ${photoStatus}`;
             const costDate = new Date(cost.date);
             return costDate >= firstDayOfMonth;
         });
-        const monthlyAmount = monthlyCosts.reduce((sum, cost) => sum + cost.amount, 0);
+        const selectedRange = this.dataLoader?.current?.range;
+        const monthlyAmount = selectedRange ? totalAmount : monthlyCosts.reduce((sum, cost) => sum + cost.amount, 0);
+        const monthLabel = document.getElementById('monthlyOperatingCost').previousElementSibling;
+        if (monthLabel) monthLabel.textContent = selectedRange ? '所选范围成本' : '本月成本';
         document.getElementById('monthlyOperatingCost').textContent = `¥${monthlyAmount.toFixed(2)}`;
 
         // 平均日成本
@@ -5503,7 +5542,7 @@ ${photoStatus}`;
         
         // 筛选数据
         let filteredCosts = this.operatingCosts;
-        if (dateRangeValue !== 'all') {
+        if (dateRangeValue !== 'all' && dateRangeValue !== 'selected') {
             const days = parseInt(dateRangeValue);
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -6702,6 +6741,7 @@ ${photoStatus}`;
 
     // 处理批量导入数据
     async processImportData() {
+        if (this.dataLoader && !await this.dataLoader.prepareSave('schedules', 'importDate')) return;
         const importDate = document.getElementById('importDate').value;
         const importText = document.getElementById('importDataText').value.trim();
 
@@ -7041,6 +7081,7 @@ ${photoStatus}`;
 
     // 方案A：生成 AI 分析报告
     async generateAIReport() {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData(ModuleDataLoader.dated, this.dataLoader.aiRange('aiReportDateRange'), context => context.generateAIReport());
         const outputEl = document.getElementById('aiReportOutput');
         const btn = document.getElementById('aiGenerateReportBtn');
         if (!outputEl) return;
@@ -7113,6 +7154,7 @@ ${photoStatus}`;
 
     // 方案B：发送对话
     async sendAIChat(msg) {
+        if (this.dataLoader && !this._completeDataAction) return this.dataLoader.withData(ModuleDataLoader.dated, this.dataLoader.aiRange('aiChatDateRange'), context => context.sendAIChat(msg));
         const inputEl = document.getElementById('aiChatInput');
         const sendBtn = document.getElementById('aiSendBtn');
         const messagesEl = document.getElementById('aiChatMessages');
@@ -7709,6 +7751,7 @@ ${photoStatus}`;
 
     // Tab切换功能
     switchTab(tabName) {
+        if (this._recordSavePending || this._dataActionPending || this.dbManager?._importing) return;
         if (!this.canAccessTab(tabName)) {
             this.showReadOnlyMessage('访问该页面');
             tabName = 'schedule';
@@ -7737,6 +7780,7 @@ ${photoStatus}`;
 
         // 激活选中的tab按钮
         document.querySelector(`[data-tab="${tabName}"]`)?.classList.add('active');
+        this.dataLoader?.refresh();
 
         // 如果切换到管理页面，刷新员工列表
         if (tabName === 'management') {
@@ -10871,6 +10915,7 @@ ${photoStatus}`;
             
             // 使用今天的日期作为导入日期
             const importDate = new Date().toISOString().split('T')[0];
+            if (this.dataLoader) this._conflictCheckSchedules = await this.dbManager.readCollectionRange('schedules', this.currentStoreId, { start: importDate, end: ModuleDataLoader.nextDay(importDate) });
             
             // 使用现有的批量导入逻辑
             const newSchedules = [];
