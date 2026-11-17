@@ -54,7 +54,12 @@
         return [...names.values()];
     }
 
-    function reconcile(rows, profiles) {
+    function referrerFor(person, referrers = {}) {
+        return Object.prototype.hasOwnProperty.call(referrers, person.employeeId)
+            ? normalizeReferrer(referrers[person.employeeId]) : person.referrer;
+    }
+
+    function reconcile(rows, profiles, referrers = {}) {
         const people = roster(rows);
         const identities = new Set(people.map(person => person.employeeId));
         const used = new Set();
@@ -68,7 +73,7 @@
                 || profiles.find(p => eligible(p) && nameOf(p.name) === person.name)
                 || profiles.find(p => eligible(p) && person.aliases.includes(nameOf(p.name)));
             if (profile) used.add(profile);
-            return { ...(profile || {}), id: profile?.id || person.employeeId, rosterId: person.employeeId, name: person.name, referrer: person.referrer };
+            return { ...(profile || {}), id: profile?.id || person.employeeId, rosterId: person.employeeId, name: person.name, referrer: referrerFor(person, referrers) };
         });
     }
 
@@ -87,8 +92,8 @@
             : row));
     }
 
-    function referrerOptions(rows) {
-        return [...new Set([...defaultReferrers, ...roster(rows).map(person => person.referrer).filter(Boolean)])];
+    function referrerOptions(rows, referrers = {}) {
+        return [...new Set([...defaultReferrers, ...roster(rows).map(person => referrerFor(person, referrers)).filter(Boolean)])];
     }
 
     const api = { normalize, roster, reconcile, mergeProfiles, rename, defaultReferrers, referrerOptions, normalizeReferrer };

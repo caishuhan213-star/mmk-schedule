@@ -273,7 +273,7 @@ class ModuleDataLoader {
             collections.forEach((name, i) => { context[name] = rows[i]; });
             if (collections.includes('employees')) {
                 context._employeeProfiles = context.employees;
-                context.employees = EmployeeRoster.reconcile(m.jlPriceTable, context._employeeProfiles);
+                context.employees = EmployeeRoster.reconcile(m.jlPriceTable, context._employeeProfiles, m._employeeReferrers);
             }
             if (collections.includes('salaryTiers')) context.salaryTiers = context.salaryTiers[0]?.data || {};
             const result = await operation(context);
@@ -341,7 +341,7 @@ class ModuleDataLoader {
             const data = await Promise.all(collections.map(name => m.dbManager.readCollectionRange(name, store)));
             if (m.currentStoreId !== store) throw new Error('店铺已变化');
             collections.forEach((name, i) => { m[name] = data[i]; });
-            if (collections.includes('employees')) { m._employeeProfiles = m.employees; m.employees = EmployeeRoster.reconcile(m.jlPriceTable, m._employeeProfiles); }
+            if (collections.includes('employees')) { m._employeeProfiles = m.employees; m.employees = EmployeeRoster.reconcile(m.jlPriceTable, m._employeeProfiles, m._employeeReferrers); }
             if (collections.includes('salaryTiers')) m.salaryTiers = m.salaryTiers[0]?.data || {};
             m._dataActionPending = false;
             return true;

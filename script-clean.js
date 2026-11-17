@@ -657,8 +657,9 @@ class ScheduleManager {
         this.salaryTiers = this.loadSalaryTiers();
         this.salaryPassword = this.loadSalaryPassword();
         this.jlPriceTable = this.jlLoadPriceTable();
+        this._employeeReferrers = this._loadEmployeeReferrers();
         this._employeeProfiles = this.employees;
-        this.employees = EmployeeRoster.reconcile(this.jlPriceTable, this._employeeProfiles);
+        this.employees = EmployeeRoster.reconcile(this.jlPriceTable, this._employeeProfiles, this._employeeReferrers);
         this._employeeProfilesReady = false;
         this._employeeSearchQuery = '';
         this._jlPriceReady = false;
@@ -1462,7 +1463,7 @@ class ScheduleManager {
         this.operatingCosts = this.readStoreCache('operatingCosts', []);
         this.projects = this.readStoreCache('projects', []);
         this._employeeProfiles = this.readStoreCache('employees', []);
-        this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles);
+        this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles, this._employeeReferrers);
         this._employeeProfilesReady = false;
         this.attendanceFees = this.readStoreCache('attendanceFees', []);
         this.interviewFees = this.readStoreCache('interviewFees', []);
@@ -4244,7 +4245,7 @@ ${photoStatus}`;
     }
 
     _refreshEmployeeRoster() {
-        this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles || []);
+        this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles || [], this._employeeReferrers);
         this.renderEmployeeList();
         this.updateEmployeeSelectors().catch(console.error);
         this.updateAttendanceFeeSelectors();
@@ -4388,7 +4389,7 @@ ${photoStatus}`;
         const select = document.getElementById('employeeReferrerFilter');
         if (!select) return;
         const selected = this._employeeReferrerFilter || '';
-        const names = EmployeeRoster.referrerOptions(this.jlLoadPriceTable());
+        const names = EmployeeRoster.referrerOptions(this.jlLoadPriceTable(), this._employeeReferrers);
         // Keep a selected custom label available even if its last employee is edited.
         if (selected.startsWith('name:') && !names.includes(selected.slice(5))) names.push(selected.slice(5));
         const options = [['', '全部推荐人'], ['unset', '未设置'], ...names.map(name => [`name:${name}`, name])];
@@ -4405,7 +4406,7 @@ ${photoStatus}`;
         input.value = value;
         this._editingEmployeeReferrer = value;
         const choices = document.getElementById('employeeReferrerOptions');
-        choices?.replaceChildren(...EmployeeRoster.referrerOptions(this.jlLoadPriceTable()).map(name => {
+        choices?.replaceChildren(...EmployeeRoster.referrerOptions(this.jlLoadPriceTable(), this._employeeReferrers).map(name => {
             const option = document.createElement('option'); option.value = name; return option;
         }));
         const presets = document.getElementById('employeeReferrerPresets');
@@ -4488,7 +4489,7 @@ ${photoStatus}`;
             referrer.type = 'button';
             referrer.setAttribute('aria-label', `编辑${employee.name}的推荐人：${employee.referrer || '未设置'}`);
             referrer.addEventListener('click', () => {
-                this.editEmployee(employee.id);
+                this.editEmployee(employee.id, true);
                 if (this.editingEmployeeId === employee.id) document.getElementById('employeeReferrer')?.focus();
             });
             text.appendChild(referrer);
@@ -4648,6 +4649,7 @@ ${photoStatus}`;
     // 打开添加员工模态框
     openAddEmployeeModal() {
         if (!this._requireEmployeeSyncReady()) return;
+        this._setEmployeeEditMode(false);
         this._setEmployeeFormError('');
         this.editingEmployeeId = null;
         this.currentPhotoData = null;
@@ -4660,17 +4662,12 @@ ${photoStatus}`;
 
     // 保存员工
     async saveEmployee() {
-        if (!this._requireEmployeeSyncReady()) return;
+        if (this._jlPriceWritePending) return;
         const editing = !!this.editingEmployeeId;
         const old = this.employees.find(e => e.id === this.editingEmployeeId);
         if (editing && !old) { alert('该员工已被移除，请关闭窗口后重试。'); return; }
         const name = document.getElementById('employeeNameInput').value.trim();
         const phone = document.getElementById('employeePhone').value.trim();
-        if (!name) { alert('请输入员工姓名'); return; }
-        if (phone && !this.validatePhone(phone)) { alert('请输入正确的手机号码格式'); return; }
-        if (this.employees.some(e => e.name === name && e.id !== this.editingEmployeeId)) {
-            alert('员工姓名已存在'); return;
-        }
         let referrer = EmployeeRoster.normalizeReferrer(document.getElementById('employeeReferrer')?.value ?? old?.referrer ?? '');
         if (referrer.length > 40) { alert('推荐人名称请控制在 40 个字以内'); return; }
         const referralBeforeEditing = this._editingEmployeeReferrer ?? old?.referrer ?? '';
@@ -4679,6 +4676,23 @@ ${photoStatus}`;
             alert('该员工的推荐人已在其他设备更新，请重新打开资料后修改。'); return;
         }
         const identity = old?.rosterId || `employee-${crypto.randomUUID()}`;
+        const fields = { name, phone, hireDate: document.getElementById('employeeHireDate').value,
+            notes: document.getElementById('employeeNotes').value.trim(), photo: this.currentPhotoData || null };
+        const previous = this._editingEmployeeProfileSnapshot || old || {};
+        const onlyReferrer = editing && (this._editingReferrerOnly || Object.keys(fields).every(key => fields[key] === (previous[key] || (key === 'photo' ? null : ''))));
+        if (onlyReferrer) {
+            if (await this._saveEmployeeReferrer(identity, referrer)) {
+                this.closeEmployeeModal();
+                this.showSuccessMessage('推荐人已保存，全店共用');
+            }
+            return;
+        }
+        if (!this._requireEmployeeSyncReady()) return;
+        if (!name) { alert('请输入员工姓名'); return; }
+        if (phone && !this.validatePhone(phone)) { alert('请输入正确的手机号码格式'); return; }
+        if (this.employees.some(e => e.name === name && e.id !== this.editingEmployeeId)) {
+            alert('员工姓名已存在'); return;
+        }
         const profile = {
             ...(old || {}), id: old?.id || identity, rosterId: identity, name, phone, referrer,
             hireDate: document.getElementById('employeeHireDate').value,
@@ -4695,7 +4709,8 @@ ${photoStatus}`;
                 .map(grade => ({ name, grade, price: null, employeeId: identity, aliases: [] }))];
         }
         rows = rows.map(row => row.employeeId === identity ? { ...row, referrer } : row);
-        const saved = await this.jlSavePriceTable(rows, { profile, storeId: this.currentStoreId });
+        const referrerPatch = !editing || referrer !== (old.referrer || '') ? { [identity]: referrer } : undefined;
+        const saved = await this.jlSavePriceTable(rows, { profile, storeId: this.currentStoreId, referrerPatch });
         if (saved) {
             this.closeEmployeeModal();
             this.showSuccessMessage(editing ? '员工资料已保存，姓名和推荐人已同步到所有店铺' : '员工已添加并同步，可在列表中填写价格');
@@ -4709,8 +4724,9 @@ ${photoStatus}`;
     }
 
     // 编辑员工
-    editEmployee(id) {
-        if (!this._requireEmployeeSyncReady()) return;
+    editEmployee(id, referrerOnly = false) {
+        if (this._jlPriceWritePending) return;
+        if (!referrerOnly && !this._requireEmployeeSyncReady()) return;
         const employee = this.employees.find(e => e.id === id);
         if (!employee) {
             alert('未找到要编辑的员工');
@@ -4718,10 +4734,13 @@ ${photoStatus}`;
         }
 
         this.editingEmployeeId = id;
+        this._editingEmployeeProfileSnapshot = { name: employee.name, phone: employee.phone || '',
+            hireDate: employee.hireDate || '', notes: employee.notes || '', photo: employee.photo || null };
+        this._setEmployeeEditMode(referrerOnly, employee.name);
         this._setEmployeeFormError('');
         this.currentPhotoData = employee.photo || null;
         
-        document.getElementById('employeeModalTitle').textContent = '编辑员工';
+        document.getElementById('employeeModalTitle').textContent = referrerOnly ? `设置${employee.name}的推荐人` : '编辑员工';
         document.getElementById('employeeNameInput').value = employee.name;
         document.getElementById('employeePhone').value = employee.phone || '';
         document.getElementById('employeeHireDate').value = employee.hireDate || '';
@@ -4746,10 +4765,13 @@ ${photoStatus}`;
 
     // 关闭员工模态框
     closeEmployeeModal() {
+        if (this._jlPriceWritePending) return;
         this._setEmployeeFormError('');
         document.getElementById('employeeModal').style.display = 'none';
         this.editingEmployeeId = null;
         this._editingEmployeeReferrer = '';
+        this._editingEmployeeProfileSnapshot = null;
+        this._setEmployeeEditMode(false);
         this.currentPhotoData = null;
         document.getElementById('employeeForm').reset();
         this.resetPhotoUpload();
@@ -10272,6 +10294,69 @@ ${photoStatus}`;
 
     }
 
+    _loadEmployeeReferrers() {
+        try { return JSON.parse(localStorage.getItem('jl_employee_referrers') || '{}') || {}; }
+        catch (_) { return {}; }
+    }
+
+    _applyEmployeeReferrers(referrers) {
+        this._employeeReferrers = referrers && typeof referrers === 'object' && !Array.isArray(referrers) ? { ...referrers } : {};
+        try { localStorage.setItem('jl_employee_referrers', JSON.stringify(this._employeeReferrers)); } catch (_) {}
+    }
+
+    _setEmployeeEditMode(referrerOnly, name = '') {
+        this._editingReferrerOnly = referrerOnly;
+        const input = document.getElementById('employeeReferrer');
+        document.querySelectorAll('#employeeForm .form-group').forEach(group => {
+            group.style.display = referrerOnly && !group.contains(input) ? 'none' : '';
+        });
+        const hint = document.querySelector('#employeeForm .employee-form-hint');
+        if (hint) {
+            this._employeeFullHint ||= hint.textContent;
+            hint.textContent = referrerOnly ? `${name} · 推荐人全店共用，保存后立即生效。` : this._employeeFullHint;
+        }
+        const submit = document.querySelector('#employeeForm button[type="submit"]');
+        if (submit) submit.textContent = referrerOnly ? '保存推荐人' : '保存员工';
+    }
+
+    async _saveEmployeeReferrer(employeeId, referrer) {
+        if (this._jlPriceWritePending) return false;
+        this._jlPriceWritePending = true;
+        const uid = this.dbManager._currentUser?.uid;
+        this._employeeSaveError = '';
+        this._setEmployeeFormError(''); this._setEmployeeSaving(true);
+        const protectDraft = event => { event.preventDefault(); event.returnValue = ''; };
+        window.addEventListener?.('beforeunload', protectDraft);
+        const slow = setTimeout(() => this._setEmployeeFormError('正在等待云端确认，请保持当前窗口打开。'), 12000);
+        try {
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) throw Object.assign(new Error('网络已断开'), { code: 'unavailable' });
+            await this.dbManager.saveEmployeeReferrer(employeeId, referrer);
+            if (uid !== this.dbManager._currentUser?.uid) return false;
+            this._applyEmployeeReferrers({ ...this._employeeReferrers, [employeeId]: referrer });
+            this._employeeReferrersReady = true;
+            this._refreshEmployeeRoster();
+            this._setEmployeeFormError('');
+            window.firebaseManager?.setEmployeeSaveError?.('');
+            return true;
+        } catch (error) {
+            const code = String(error.code || '').replace(/^firestore\//, '');
+            const reason = {
+                'resource-exhausted': '云数据库额度受限，本次直接写入也被拒绝，请等待额度恢复。',
+                'permission-denied': '当前账号没有云端写入权限。',
+                'unauthenticated': '登录已失效，请重新登录。',
+                'unavailable': '暂时无法连接云数据库，请检查网络。',
+                'not-found': '云端员工名单尚未建立，请先完成名单同步。'
+            }[code] || error.message || '请稍后重试。';
+            this._employeeSaveError = `保存失败：${reason} 推荐人尚未保存。`;
+            this._setEmployeeFormError(this._employeeSaveError + ' 表单内容仍保留在当前窗口，请勿刷新。');
+            window.firebaseManager?.setEmployeeSaveError?.(code === 'resource-exhausted' ? '云端额度受限' : '员工保存失败');
+            return false;
+        } finally {
+            clearTimeout(slow); window.removeEventListener?.('beforeunload', protectDraft);
+            this._jlPriceWritePending = false; this._setEmployeeSaving(false); this.renderEmployeeList();
+        }
+    }
+
     async jlSavePriceTable(rows, options = {}) {
         if (!this._requireEmployeeSyncReady(!!options.profile)) return false;
         const expectedRows = this.jlLoadPriceTable();
@@ -10284,6 +10369,10 @@ ${photoStatus}`;
         this._setEmployeeSaving(true);
         try {
             await this.dbManager.saveJlPriceTable(cleanRows, { ...options, expectedRows });
+            if (options.referrerPatch) {
+                this._applyEmployeeReferrers({ ...this._employeeReferrers, ...options.referrerPatch });
+                this._employeeReferrersReady = true;
+            }
             if (options.profile && options.storeId === this.currentStoreId) {
                 this._employeeProfiles = EmployeeRoster.mergeProfiles(this._employeeProfiles, [options.profile]);
                 this._cacheEmployeeProfiles();
@@ -10336,6 +10425,8 @@ ${photoStatus}`;
         let attemptedMigration = false;
         this.dbManager.subscribeToJlPriceTable(async (rows, metadata = {}) => {
             if (metadata.pending) return;
+            if (!metadata.fromCache || (!this._employeeReferrersReady && metadata.exists)) this._applyEmployeeReferrers(metadata.referrers || {});
+            if (!metadata.fromCache) this._employeeReferrersReady = true;
             this._jlPriceReady = !metadata.fromCache;
             if (!metadata.fromCache && !metadata.exists && !attemptedMigration && localRows.length && this.canModifyData()) {
                 attemptedMigration = true;

@@ -11,8 +11,8 @@ const copy = value => JSON.parse(JSON.stringify(value));
 function app() {
     const cache = new Map(), alerts = [];
     const fields = {};
-    const document = { addEventListener() {}, getElementById: id => fields[id] || null, querySelectorAll: () => [] };
-    const context = vm.createContext({ console, window: {}, document, EmployeeRoster: roster, crypto: require('node:crypto').webcrypto,
+    const document = { addEventListener() {}, getElementById: id => fields[id] || null, querySelectorAll: () => [], querySelector: () => null };
+    const context = vm.createContext({ console, window: {}, document, setTimeout, clearTimeout, EmployeeRoster: roster, crypto: require('node:crypto').webcrypto,
         localStorage: { getItem: key => cache.get(key) || null, setItem: (key, value) => cache.set(key, value) },
         alert: message => alerts.push(message), confirm: () => true });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../script-clean.js'), 'utf8') + '\nglobalThis.Manager = ScheduleManager;', context);
@@ -364,18 +364,19 @@ function employeeFields(fields, referrer) {
     Object.assign(fields, { employeeNameInput: { value: '小林' }, employeePhone: { value: '' }, employeeHireDate: { value: '' }, employeeNotes: { value: '' }, employeeReferrer: { value: referrer } });
 }
 
-test('saving a referrer updates every grade and every store without changing prices or roster order', async () => {
+test('saving a referrer updates the shared field without rewriting prices, profiles or roster order', async () => {
     const { manager, fields } = app();
     const id = manager.employees[0].id;
     manager.editingEmployeeId = id; manager._editingEmployeeReferrer = '';
     employeeFields(fields, '圆圆');
     let write;
-    manager.dbManager.saveJlPriceTable = async rows => { write = copy(rows); };
+    const before = copy(manager.jlPriceTable);
+    manager.dbManager.saveEmployeeReferrer = async (employeeId, referrer) => { write = { employeeId, referrer }; };
+    manager.dbManager.saveJlPriceTable = async () => { throw new Error('must not rewrite prices'); };
     await manager.saveEmployee();
-    assert.deepEqual(write.map(row => row.price), original.map(row => row.price));
-    assert.deepEqual(write.map(row => row.name), original.map(row => row.name));
-    assert.ok(write.filter(row => row.name === '小林').every(row => row.referrer === '圆圆'));
-    assert.equal(roster.reconcile(write, [{ id: 'other', name: '小林', phone: '13900000000', referrer: '过期标签' }])[0].referrer, '圆圆');
+    assert.deepEqual(manager.jlPriceTable, before);
+    assert.equal(write.employeeId, manager.employees[0].rosterId); assert.equal(write.referrer, '圆圆');
+    assert.equal(roster.reconcile(before, [{ id: 'other', name: '小林', phone: '13900000000', referrer: '过期标签' }], manager._employeeReferrers)[0].referrer, '圆圆');
     fields.employeeReferrer.value = ''; manager._editingEmployeeReferrer = '圆圆';
     await manager.saveEmployee();
     assert.equal(manager.employees[0].referrer, '');
@@ -385,7 +386,7 @@ test('failed referral saves retain the previous tag and newer remote referrals c
     const { manager, fields, alerts } = app();
     manager.editingEmployeeId = manager.employees[0].id; manager._editingEmployeeReferrer = '';
     employeeFields(fields, '嘉嘉');
-    manager.dbManager.saveJlPriceTable = async () => { throw new Error('offline'); };
+    manager.dbManager.saveEmployeeReferrer = async () => { throw new Error('offline'); };
     await manager.saveEmployee();
     assert.equal(manager.employees[0].referrer, '');
     assert.equal(fields.employeeReferrer.value, '嘉嘉');
@@ -410,7 +411,7 @@ test('quota errors keep the referral draft, remain visible after a server snapsh
     manager._editingEmployeeReferrer = '';
     let closeCount = 0;
     manager.closeEmployeeModal = () => { closeCount++; };
-    manager.dbManager.saveJlPriceTable = async () => { throw Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' }); };
+    manager.dbManager.saveEmployeeReferrer = async () => { throw Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' }); };
     const before = copy(manager.jlPriceTable);
     await manager.saveEmployee();
     assert.match(fields.employeeFormError.textContent, /额度受限/);
@@ -426,7 +427,7 @@ test('quota errors keep the referral draft, remain visible after a server snapsh
     manager.jlInitPriceTableSync(); snapshot(before, { exists: true, fromCache: false });
     assert.match(manager._employeeSaveError, /尚未保存/);
     assert.equal(manager.employees[0].referrer, '');
-    manager.dbManager.saveJlPriceTable = async () => {};
+    manager.dbManager.saveEmployeeReferrer = async () => {};
     await manager.saveEmployee();
     assert.equal(manager.employees[0].referrer, '嘉嘉');
     assert.equal(manager._employeeSaveError, '');
@@ -485,4 +486,106 @@ test('the real path builders target shared prices and the selected store profile
     assert.deepEqual(writes.map(write => write.path), [
         'team/shared/settings/jlPriceTable', 'team/shared/stores/test-store/employees/employee-test'
     ]);
+});
+
+function referralBackend() {
+    const state = { exists: true, rows: prices(), referrers: { other: '杨总' }, reads: 0, writes: [], failWrite: false };
+    const firestore = () => ({ collection: collection => ({ doc: id => ({
+        get: () => { state.reads++; throw Object.assign(new Error('Read quota'), { code: 'resource-exhausted' }); },
+        update: async (field, value) => {
+            if (!state.exists) throw Object.assign(new Error('Missing document'), { code: 'not-found' });
+            if (state.failWrite) throw Object.assign(new Error('Write quota'), { code: 'resource-exhausted' });
+            state.writes.push({ path: `${collection}/${id}`, field: field.segments, value });
+            state.referrers[field.segments[1]] = value;
+        }
+    }) }) });
+    firestore.FieldPath = class { constructor(...segments) { this.segments = segments; } };
+    const context = vm.createContext({ console, EmployeeRoster: roster, firebase: { firestore } });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../firebase-data-manager.js'), 'utf8') + '\nglobalThis.DataManager = FirebaseDataManager;', context);
+    const manager = Object.create(context.DataManager.prototype);
+    Object.assign(manager, { teamId: 'shared', _currentUser: { uid: 'test-only' }, _readOnly: false });
+    return { manager, state };
+}
+
+test('referral-only save uses one field update and zero reads even when every read would exceed quota', async () => {
+    const { manager, state } = referralBackend(); const before = copy(state.rows);
+    await manager.saveEmployeeReferrer('price-A.B', '加加');
+    assert.equal(state.reads, 0); assert.equal(state.writes.length, 1);
+    assert.deepEqual(copy(state.writes[0]), { path: 'team/shared/settings/jlPriceTable', field: ['referrers', 'price-A.B'], value: '嘉嘉' });
+    assert.equal(state.referrers.other, '杨总'); assert.equal(state.referrers['price-A.B'], '嘉嘉');
+    assert.deepEqual(state.rows, before);
+});
+
+test('independent referral updates preserve other employees, explicit clearing, and the original price document', async () => {
+    const { manager, state } = referralBackend();
+    await Promise.all([manager.saveEmployeeReferrer('employee-a', '圆圆'), manager.saveEmployeeReferrer('employee-b', '点点')]);
+    await manager.saveEmployeeReferrer('employee-a', '');
+    assert.equal(state.referrers['employee-a'], ''); assert.equal(state.referrers['employee-b'], '点点');
+    state.exists = false;
+    await assert.rejects(manager.saveEmployeeReferrer('employee-c', '嘉嘉'), { code: 'not-found' });
+    assert.equal(state.exists, false); assert.equal(state.writes.length, 3);
+});
+
+test('referral update reports actual write quota and enforces authentication and read-only mode', async () => {
+    const { manager, state } = referralBackend();
+    state.failWrite = true; await assert.rejects(manager.saveEmployeeReferrer('employee-a', '点点'), { code: 'resource-exhausted' });
+    state.failWrite = false; manager._readOnly = true;
+    await assert.rejects(manager.saveEmployeeReferrer('employee-a', '点点'), { code: 'permission-denied' });
+    manager._readOnly = false; manager._currentUser = null;
+    await assert.rejects(manager.saveEmployeeReferrer('employee-a', '点点'), { code: 'unauthenticated' });
+    assert.equal(state.writes.length, 0); assert.equal(state.reads, 0);
+});
+
+test('dedicated referral editor saves from a cached identity without requiring price or profile reads', async () => {
+    const { manager, fields, cache } = app();
+    employeeFields(fields, '嘉嘉');
+    manager.editingEmployeeId = manager.employees[0].id; manager._editingEmployeeReferrer = '';
+    manager._editingReferrerOnly = true; manager._jlPriceReady = manager._employeeProfilesReady = false;
+    let writes = 0;
+    manager.dbManager.saveEmployeeReferrer = async () => { writes++; };
+    manager.dbManager.saveJlPriceTable = async () => { throw new Error('Unexpected transaction'); };
+    await manager.saveEmployee();
+    assert.equal(writes, 1); assert.equal(manager.employees[0].referrer, '嘉嘉');
+    assert.equal(JSON.parse(cache.get('jl_employee_referrers'))[manager.employees[0].rosterId], '嘉嘉');
+    assert.equal(cache.has('store_a_employees'), false);
+    manager._employeeProfiles = [{ id: 'other-store-profile', name: '小林', phone: '13900000000' }];
+    manager._refreshEmployeeRoster(); assert.equal(manager.employees[0].referrer, '嘉嘉'); assert.equal(manager.employees[0].phone, '13900000000');
+});
+
+test('referral save waits for acknowledgement, ignores repeat clicks, and cannot update a new account', async () => {
+    const { manager, fields } = app(); employeeFields(fields, '点点');
+    manager.dbManager._currentUser = { uid: 'first' };
+    let finish, writes = 0;
+    manager.dbManager.saveEmployeeReferrer = () => { writes++; return new Promise(resolve => { finish = resolve; }); };
+    const saving = manager._saveEmployeeReferrer(manager.employees[0].rosterId, '点点');
+    assert.equal(manager.employees[0].referrer, '');
+    assert.equal(await manager._saveEmployeeReferrer(manager.employees[0].rosterId, '嘉嘉'), false);
+    assert.equal(writes, 1); manager.dbManager._currentUser = { uid: 'second' }; finish();
+    assert.equal(await saving, false); assert.equal(manager.employees[0].referrer, ''); assert.equal(manager._jlPriceWritePending, false);
+});
+
+test('shared referral overrides follow stable identity through renames and explicit clearing', () => {
+    const rows = prices(), identity = rows[0].employeeId;
+    const renamed = roster.rename(rows, identity, '林林');
+    assert.equal(roster.reconcile(renamed, [], { [identity]: '自定义推荐人' })[0].referrer, '自定义推荐人');
+    assert.ok(roster.referrerOptions(renamed, { [identity]: '自定义推荐人' }).includes('自定义推荐人'));
+    const legacy = rows.map(row => ({ ...row, referrer: '杨总' }));
+    assert.equal(roster.reconcile(legacy, [], { [identity]: '' })[0].referrer, '');
+    assert.equal(roster.reconcile(legacy, [], { [identity]: '' })[1].referrer, '杨总');
+});
+
+test('empty cache cannot erase a stored referral and late cache cannot undo an acknowledged save', async () => {
+    const { manager } = app(); const identity = manager.employees[0].rosterId;
+    manager._applyEmployeeReferrers({ [identity]: '嘉嘉' });
+    let snapshot;
+    manager.dbManager.subscribeToJlPriceTable = callback => { snapshot = callback; };
+    manager.jlInitPriceTableSync();
+    await snapshot([], { exists: false, fromCache: true, referrers: {} });
+    assert.equal(manager._employeeReferrers[identity], '嘉嘉');
+    manager.dbManager.saveEmployeeReferrer = async () => {};
+    assert.equal(await manager._saveEmployeeReferrer(identity, '点点'), true);
+    await snapshot(prices(), { exists: true, fromCache: true, referrers: { [identity]: '圆圆' } });
+    assert.equal(manager.employees[0].referrer, '点点');
+    await snapshot(prices(), { exists: true, fromCache: false, referrers: { [identity]: '杨总' } });
+    assert.equal(manager.employees[0].referrer, '杨总');
 });

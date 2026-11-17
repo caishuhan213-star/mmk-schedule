@@ -710,6 +710,17 @@ class FirebaseDataManager {
         return items.length > 0 ? items : {};
     }
 
+    async saveEmployeeReferrer(employeeId, value) {
+        if (!this._canOperate()) throw Object.assign(new Error('请登录后再保存'), { code: 'unauthenticated' });
+        if (!this._canWrite('jlPriceTable')) throw Object.assign(new Error('当前账号没有写入权限'), { code: 'permission-denied' });
+        const referrer = EmployeeRoster.normalizeReferrer(value);
+        if (typeof employeeId !== 'string' || !employeeId.trim() || referrer.length > 40) throw new Error('员工编号或推荐人无效');
+        // update (not set) cannot create a price document without its roster.
+        // FieldPath also keeps dots in legacy employee IDs as literal characters.
+        const field = new firebase.firestore.FieldPath('referrers', employeeId);
+        await this._settingsDocRef('jlPriceTable').update(field, referrer);
+    }
+
     async saveJlPriceTable(rows, options = {}) {
         // Compare against the version the editor saw. A transaction also keeps
         // profile edits and name/price changes together when both are supplied.
@@ -725,7 +736,8 @@ class FirebaseDataManager {
                     error.latestRows = actual;
                     throw error;
                 }
-                transaction.set(ref, { rows, updatedAt: Date.now(), userId: this._currentUser.uid }, { merge: true });
+                transaction.set(ref, { rows, updatedAt: Date.now(), userId: this._currentUser.uid,
+                    ...(options.referrerPatch ? { referrers: options.referrerPatch } : {}) }, { merge: true });
                 if (options.profile) {
                     const profileRef = this._collectionRef(options.storeId, 'employees').doc(String(options.profile.id));
                     transaction.set(profileRef, options.profile, { merge: true });
@@ -790,7 +802,8 @@ class FirebaseDataManager {
             const rows = Array.isArray(data.rows) ? data.rows : [];
 
             try {
-                callback(rows, { exists, fromCache: doc.metadata.fromCache, pending: doc.metadata.hasPendingWrites });
+                callback(rows, { exists, fromCache: doc.metadata.fromCache, pending: doc.metadata.hasPendingWrites,
+                    referrers: data.referrers && typeof data.referrers === 'object' && !Array.isArray(data.referrers) ? data.referrers : {} });
             } catch (error) {
                 console.error('FirebaseDataManager: 接龙价格表回调失败:', error);
             }
