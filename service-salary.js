@@ -1,9 +1,9 @@
-/* Monthly customer-service pay: only orders beyond 200 receive 25 yuan. */
+/* Monthly customer-service pay: only orders beyond 200 receive 15 yuan. */
 (function (root) {
     'use strict';
     const bonus = root.ReferralBonus || (typeof require === 'function' && require('./referral-bonus.js'));
     const money = cents => (cents / 100).toFixed(2).replace(/\.00$/, '');
-    const rules = Object.freeze({ threshold: 200, firstRateCents: 1000, extraRateCents: 2500 });
+    const rules = Object.freeze({ threshold: 200, firstRateCents: 1000, extraRateCents: 1500 });
     const defaults = Object.freeze({ referrer: '点点', baseSalary: '3000', allowance: '500', rate: '15' });
 
     function amount(value, label) {
@@ -30,7 +30,7 @@
         const firstCents = firstOrders * rules.firstRateCents, extraCents = extraOrders * rules.extraRateCents;
         const totalCents = input.baseCents + input.allowanceCents + firstCents + extraCents + referral.totalCents;
         if (!Number.isSafeInteger(totalCents)) throw new Error('工资合计金额过大，请检查输入');
-        const formula = `底薪${money(input.baseCents)} + 补贴${money(input.allowanceCents)} + 前200单提成${firstOrders}×10 + 超出部分提成${extraOrders}×25 + 推荐人奖金${money(referral.totalCents)} = ${money(totalCents)}元`;
+        const formula = `底薪${money(input.baseCents)} + 补贴${money(input.allowanceCents)} + 前200单提成${firstOrders}×10 + 超出部分提成${extraOrders}×${money(rules.extraRateCents)} + 推荐人奖金${money(referral.totalCents)} = ${money(totalCents)}元`;
         return { baseCents: input.baseCents, allowanceCents: input.allowanceCents, storeOrders: referral.storeOrders,
             firstOrders, extraOrders, firstCents, extraCents, totalCents, referral,
             formula: formula + '\n推荐人奖金明细：' + referral.formula };
@@ -116,8 +116,8 @@
             this.el('LiveBreakdown').textContent = result
                 ? `底薪 ${money(result.baseCents)} + 补贴 ${money(result.allowanceCents)} + 单量提成 ${money(result.firstCents + result.extraCents)} + 推荐奖金 ${money(result.referral.totalCents)}` : '';
             this.el('LiveRule').textContent = result
-                ? `单量提成：${result.firstOrders}×10 + ${result.extraOrders}×25；推荐奖金：${result.referral.totalOrders}×${money(result.referral.rateCents)}。`
-                : '前200单10元/单，超出的部分25元/单。';
+                ? `单量提成：${result.firstOrders}×10 + ${result.extraOrders}×${money(rules.extraRateCents)}；推荐奖金：${result.referral.totalOrders}×${money(result.referral.rateCents)}。`
+                : `前200单10元/单，超出的部分${money(rules.extraRateCents)}元/单。`;
         }
         values() {
             return { referrer: this.el('Referrer').value, month: this.el('Month').value,
@@ -143,7 +143,7 @@
                 ['底薪', '按整月计算', result.baseCents],
                 ['补贴', '按整月计算', result.allowanceCents],
                 ['前200单提成', `${result.firstOrders} 单 × 10 元`, result.firstCents],
-                ['超出200单的提成', `${result.extraOrders} 单 × 25 元`, result.extraCents],
+                ['超出200单的提成', `${result.extraOrders} 单 × ${money(rules.extraRateCents)} 元`, result.extraCents],
                 ['推荐人奖金', `${result.referral.totalOrders} 单 × ${money(result.referral.rateCents)} 元`, result.referral.totalCents]
             ];
             this.el('Rows').replaceChildren(...entries.map(([label, rule, cents]) => {

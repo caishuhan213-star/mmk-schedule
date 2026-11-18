@@ -9,11 +9,12 @@ const rows = [
 const order = (id, employeeName='点点', scheduleDate='2026-10-01') => ({id,employeeName,scheduleDate});
 const run = overrides => calculate({rows,schedules:[],referrer:'点点',month:'2026-10',baseSalary:'3000',allowance:'500',rate:'20',...overrides});
 
-for (const [count, first, extra, total] of [[0,0,0,3500],[199,199,0,5490],[200,200,0,5500],[201,200,1,5525],[250,200,50,6750]]) {
-    test(`${count} monthly orders: only the ${extra} excess orders earn 25 yuan`, () => {
+for (const [count, first, extra, total] of [[0,0,0,3500],[199,199,0,5490],[200,200,0,5500],[201,200,1,5515],[250,200,50,6250]]) {
+    test(`${count} monthly orders: only the ${extra} excess orders earn 15 yuan`, () => {
         const result = run({schedules:Array.from({length:count},(_,i)=>order(String(i)))});
         assert.equal(result.storeOrders,count); assert.equal(result.firstOrders,first); assert.equal(result.extraOrders,extra);
         assert.equal(result.totalCents,total*100); assert.equal(result.referral.totalOrders,0);
+        assert.ok(result.formula.includes(`超出部分提成${extra}×15`));
     });
 }
 
