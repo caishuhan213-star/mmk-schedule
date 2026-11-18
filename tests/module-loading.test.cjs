@@ -160,7 +160,8 @@ test('no scoped callback is treated as an authoritative cached or pending result
 function loaderHarness(tab = 'schedule') {
     const values = { filterDate: '2026-11-17', filterMonth: '2026-11', operatingCostChartDateRange: 'selected' };
     for (const prefix of Loader.charts) { values[prefix + 'DateRange'] = 'custom'; values[prefix + 'StartDate'] = '2026-11-01'; values[prefix + 'EndDate'] = '2026-11-30'; }
-    const manager = { currentStoreId: 'a', currentViewMode: 'day', reportRebateFilter: { mode: 'month', month: '2026-11' }, dbManager: { _currentUser: { uid: 'a' } } };
+    const manager = { currentStoreId: 'a', currentViewMode: 'day', reportRebateFilter: { mode: 'month', month: '2026-11' }, dbManager: { _currentUser: { uid: 'a' } },
+        serviceSalary: {currentMonth:()=> '2026-11',setLiveActive(){},beginLive(){},receiveLive(){},liveState(){}} };
     const loader = Object.create(Loader.prototype);
     Object.assign(loader, { manager, costMonth: '2026-11', tab: () => tab, value: id => values[id] || '' });
     return { loader, manager, values, setTab: value => { tab = value; } };
@@ -172,7 +173,7 @@ test('plans load only module dependencies and use the same month for all financi
     for (const name of Loader.dated) assert.deepEqual(plan.scopes[name], november);
     assert.equal(plan.scopes.salaryTiers, undefined);
     h.setTab('rebate'); assert.deepEqual(h.loader.plan().scopes, { reportRebates: november });
-    h.setTab('operating-cost'); assert.deepEqual(h.loader.plan().scopes, { operatingCosts: november });
+    h.setTab('operating-cost'); assert.deepEqual(h.loader.plan().scopes, { operatingCosts: november, schedules: november });
     h.setTab('ai-analysis'); assert.deepEqual(h.loader.plan().scopes, {});
 });
 
@@ -225,4 +226,42 @@ test('exports use complete isolated inputs and abort on failed or wrong-store re
     h.manager.dbManager.readCollectionRange = async () => { h.manager.currentStoreId = 'b'; return []; };
     assert.equal(await h.loader.withData(['schedules'], null, () => exported++), false);
     assert.equal(exported, 1); assert.equal(h.manager._dataActionPending, false);
+});
+
+test('salary remains scoped to this month when viewing costs for another month or all history', () => {
+    const h=loaderHarness('operating-cost');
+    h.loader.costMonth='2020-02';
+    assert.deepEqual(h.loader.plan().scopes,{operatingCosts:{start:'2020-02-01',end:'2020-03-01'},schedules:november});
+    h.values.operatingCostChartDateRange='all';
+    assert.deepEqual(h.loader.plan().scopes,{operatingCosts:null,schedules:november});
+    h.manager.serviceSalary.currentMonth=()=> '2026-12';
+    assert.deepEqual(h.loader.plan().scopes.schedules,{start:'2026-12-01',end:'2027-01-01'});
+});
+
+test('cost totals and salary snapshots are independent; salary data cannot overwrite a different visible period', () => {
+    const h=loaderHarness('operating-cost'), states=[],received=[],costs=[];
+    Object.assign(h.loader,{started:true,generation:0,key:'',status(){},applyRows:()=>costs.push('render')});
+    h.manager.schedules=[{id:'old-visible-period'}];h.manager._getSubscribeCallbacks=()=>({});
+    h.manager.serviceSalary.receiveLive=rows=>received.push(rows);
+    h.manager.serviceSalary.liveState=(state)=>states.push(state);
+    let callbacks,options;
+    h.manager.dbManager.subscribeToStore=(_,cb,opts)=>{callbacks=cb;options=opts;};
+    h.loader.refresh();callbacks.operatingCosts([]);assert.equal(costs.length,1);
+    options.onError({code:'resource-exhausted'},'schedules');assert.deepEqual(states,['error']);
+    callbacks.schedules([{id:'pending'}],{pending:true});callbacks.schedules([],{fromCache:true});assert.equal(received.length,0);
+    callbacks.schedules([{id:'current-month'}],{});assert.equal(received.length,1);assert.equal(costs.length,1);
+    assert.deepEqual(h.manager.schedules,[{id:'old-visible-period'}]);
+    assert.equal(h.loader.rows.schedules,undefined);
+    const retired=callbacks;h.manager.currentStoreId='b';h.loader.refresh();retired.schedules([{id:'late'}]);assert.equal(received.length,1);
+    clearTimeout(h.loader.slowTimer);
+});
+
+test('metadata reports pending and offline state without delivering unconfirmed arrays; errors in the observer do not break delivery', () => {
+    const h=harness(),states=[],rows=[];
+    h.manager.subscribeToStore('a',{schedules:r=>rows.push(r)},{scopes:{schedules:november},onMetadata:(_,m)=>states.push(m)});
+    h.emit(0,{fromCache:true});h.emit(0,{hasPendingWrites:true});
+    assert.equal(rows.length,0);assert.equal(states.length,2);assert.equal(states[0].fromCache,true);assert.equal(states[1].pending,true);
+    h.emit(0);assert.equal(rows.length,1);
+    h.manager.subscribeToStore('a',{schedules:r=>rows.push(r)},{scopes:{schedules:november},onMetadata:()=>{throw new Error('observer failure');}});
+    h.emit(0);assert.equal(rows.length,3);h.manager.unsubscribeAll();
 });

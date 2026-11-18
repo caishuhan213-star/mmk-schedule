@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=16">
     <link rel="stylesheet" href="employee-directory.css?v=6">
-    <link rel="stylesheet" href="referral-bonus.css?v=2">
+    <link rel="stylesheet" href="referral-bonus.css?v=3">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1301,6 +1301,24 @@
                         <button type="button" class="btn btn-secondary" id="serviceSalaryThisMonth">本月</button>
                     </div>
                 </div>
+                <div id="serviceSalaryLive" class="service-salary-live" data-state="loading">
+                    <div class="service-salary-live-heading">
+                        <h3 id="serviceSalaryLiveTitle">点点 · 本月工资预估</h3>
+                        <span id="serviceSalaryLiveMonth" class="service-salary-month"></span>
+                    </div>
+                    <div class="service-salary-live-metrics">
+                        <div><span>本月预计工资</span><strong id="serviceSalaryLiveTotal">—</strong></div>
+                        <div><span>店铺本月单量</span><strong id="serviceSalaryLiveOrders">—</strong></div>
+                        <div><span>推荐员工单量</span><strong id="serviceSalaryLiveReferralOrders">—</strong></div>
+                    </div>
+                    <p id="serviceSalaryLiveBreakdown" class="service-salary-live-breakdown"></p>
+                    <p id="serviceSalaryLiveRule" class="referral-bonus-footnote"></p>
+                    <div class="service-salary-live-footer">
+                        <p id="serviceSalaryLiveStatus" role="status" aria-live="polite">正在同步本月排班…</p>
+                        <button id="serviceSalaryLiveRetry" type="button" class="btn btn-secondary" hidden>重新连接</button>
+                    </div>
+                    <p class="referral-bonus-footnote">自动跟随本月已录入排班和员工推荐人更新；底薪、补贴按整月预估。下方切换历史月份不影响本月展示。</p>
+                </div>
                 <form id="serviceSalaryForm" class="referral-bonus-form service-salary-form">
                     <div class="form-group">
                         <label for="serviceSalaryReferrer">客服（推荐人）</label>
@@ -1320,7 +1338,7 @@
                     </div>
                     <div class="form-group">
                         <label for="serviceSalaryRate">推荐奖金（元/单）</label>
-                        <input id="serviceSalaryRate" type="number" value="20" min="0" step="0.01" inputmode="decimal" required>
+                        <input id="serviceSalaryRate" type="number" value="15" min="0" step="0.01" inputmode="decimal" required>
                     </div>
                     <button type="submit" class="btn btn-primary" id="serviceSalaryCalculate">计算工资</button>
                 </form>
@@ -2018,10 +2036,10 @@
     <script src="firebase-manager.js?v=8"></script>
     <script src="employee-roster.js?v=4"></script>
     <script src="confirmed-query-cache.js?v=1"></script>
-    <script src="firebase-data-manager.js?v=16"></script>
-    <script src="module-data-loader.js?v=4"></script>
+    <script src="firebase-data-manager.js?v=17"></script>
+    <script src="module-data-loader.js?v=5"></script>
     <script src="referral-bonus.js?v=2"></script>
-    <script src="service-salary.js?v=1"></script>
+    <script src="service-salary.js?v=2"></script>
     <script src="ai-analyst.js?v=3"></script>
     <script src="script-clean.js?v=48"></script>
     <script src="auth-guard.js?v=15"></script>

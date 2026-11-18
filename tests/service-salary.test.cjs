@@ -49,3 +49,9 @@ test('editable salary components use integer cents, validation rejects invalid m
     for(const month of ['','2026-13','2026-01-01','2026-1']) assert.throws(()=>run({month}),/月份/);
     assert.throws(()=>run({rate:'-1'}),/奖金/);
 });
+
+test('customer-service referral default is 15 yuan while the general referral calculator keeps its own rate', () => {
+    const result=calculate({month:'2026-11',rows,schedules:[order('1','小甲','2026-11-01')]});
+    assert.equal(result.referral.rateCents,1500);assert.equal(result.totalCents,352500);
+    assert.equal(run({schedules:[order('1','小甲')]}).referral.totalCents,2000);
+});

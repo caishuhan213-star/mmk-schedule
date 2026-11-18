@@ -4,6 +4,7 @@
     const bonus = root.ReferralBonus || (typeof require === 'function' && require('./referral-bonus.js'));
     const money = cents => (cents / 100).toFixed(2).replace(/\.00$/, '');
     const rules = Object.freeze({ threshold: 200, firstRateCents: 1000, extraRateCents: 2500 });
+    const defaults = Object.freeze({ referrer: '点点', baseSalary: '3000', allowance: '500', rate: '15' });
 
     function amount(value, label) {
         const input = String(value ?? '').trim();
@@ -12,6 +13,7 @@
         return cents;
     }
     function prepare(values) {
+        values = { ...defaults, ...values };
         if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(values.month)) throw new Error('请选择有效的工资月份');
         const start = values.month + '-01';
         const last = new Date(start + 'T00:00:00Z');
@@ -35,9 +37,88 @@
     }
 
     class Panel extends bonus.Panel {
-        constructor(manager) { super(manager, 'serviceSalary'); }
+        constructor(manager) {
+            super(manager, 'serviceSalary');
+            this.el('LiveRetry')?.addEventListener('click', () => this.manager.dataLoader.refresh(true));
+            window.addEventListener('offline', () => this.liveState('offline'));
+            window.addEventListener('online', () => this.liveState('loading'));
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) this.checkLiveMonth(); });
+        }
         get subject() { return '工资'; }
         get instructions() { return '按当前店铺整月总单量分段计提成，再加上该客服的推荐人奖金。'; }
+        currentMonth() { return ModuleDataLoader.dateKey(new Date()).slice(0, 7); }
+        sync() { super.sync(); this.renderLive(); }
+        invalidate(message) { super.invalidate(message); this.renderLive(); }
+        setLiveActive(active) {
+            if (this.liveActive === active) return;
+            this.liveActive = active;
+            clearTimeout(this.liveTimer);
+            if (!active) { this.live = null; this.renderLive(); return; }
+            const tick = () => {
+                if (!this.liveActive) return;
+                this.checkLiveMonth();
+                this.liveTimer = setTimeout(tick, 60000); this.liveTimer.unref?.();
+            };
+            this.liveTimer = setTimeout(tick, 60000); this.liveTimer.unref?.();
+        }
+        checkLiveMonth() {
+            // Only check the local calendar. No polling reads within a month.
+            if (this.liveActive && this.live?.month !== this.currentMonth()) this.manager.dataLoader.refresh();
+        }
+        beginLive(plan) {
+            this.live = { storeId: plan.storeId, uid: plan.uid, month: plan.salaryMonth, phase: 'loading', rows: null };
+            this.renderLive();
+        }
+        receiveLive(rows, plan) {
+            this.live = { storeId: plan.storeId, uid: plan.uid, month: plan.salaryMonth, phase: 'ready', rows, updatedAt: Date.now() };
+            this.renderLive();
+        }
+        liveState(phase, error) {
+            if (!this.liveActive || !this.live) return;
+            // A terminal listener error needs an explicit reconnect; a browser
+            // online event alone does not restore that Firestore listener.
+            if (this.live.phase === 'error' && phase !== 'error') return;
+            this.live.phase = phase; this.live.error = error;
+            this.renderLive();
+        }
+        renderLive() {
+            if (!this.form || !this.el('Live')) return;
+            const live = this.live, m = this.manager, values = { ...this.values(), month: this.currentMonth() };
+            this.el('LiveTitle').textContent = `${values.referrer || '客服'} · 本月工资预估`;
+            this.el('LiveMonth').textContent = values.month;
+            const validContext = this.liveActive && live && live.storeId === m.currentStoreId
+                && live.uid === m.dbManager._currentUser?.uid && live.month === values.month;
+            let phase = validContext ? live.phase : 'loading';
+            let message = '正在同步本月排班…', result;
+            if (validContext && Array.isArray(live.rows) && m._jlPriceReady) {
+                try { result = this.compute(values, live.rows); }
+                catch (error) { phase = 'invalid'; message = error.message; }
+            }
+            if (validContext && phase !== 'invalid') {
+                if (!m._jlPriceReady) { phase = 'loading'; message = '员工推荐人名单尚未完成同步。'; }
+                else if (phase === 'ready') message = `实时同步 · 更新于 ${new Date(live.updatedAt).toLocaleTimeString('zh-CN')}`;
+                else if (phase === 'offline') message = '连接中断，等待联网同步。';
+                else if (phase === 'pending') message = '修改正在等待云端确认。';
+                else if (phase === 'error') message = String(live.error?.code || '').includes('resource-exhausted')
+                    ? '云端额度受限，实时更新已暂停，请额度恢复后重试。' : '本月排班同步失败，请检查网络后重试。';
+                if (result && phase !== 'ready') message += ' 以下为上次已确认的数据。';
+            }
+            this.el('Live').dataset.state = phase;
+            this.el('LiveStatus').textContent = message;
+            this.el('LiveRetry').hidden = phase !== 'error';
+            const total = this.el('LiveTotal'), next = result ? `¥${money(result.totalCents)}` : '—';
+            if (total.textContent !== next && result && phase === 'ready' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                total.animate?.([{ opacity: 0.5, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 280 });
+            }
+            total.textContent = next;
+            this.el('LiveOrders').textContent = result ? `${result.storeOrders} 单` : '—';
+            this.el('LiveReferralOrders').textContent = result ? `${result.referral.totalOrders} 单` : '—';
+            this.el('LiveBreakdown').textContent = result
+                ? `底薪 ${money(result.baseCents)} + 补贴 ${money(result.allowanceCents)} + 单量提成 ${money(result.firstCents + result.extraCents)} + 推荐奖金 ${money(result.referral.totalCents)}` : '';
+            this.el('LiveRule').textContent = result
+                ? `单量提成：${result.firstOrders}×10 + ${result.extraOrders}×25；推荐奖金：${result.referral.totalOrders}×${money(result.referral.rateCents)}。`
+                : '前200单10元/单，超出的部分25元/单。';
+        }
         values() {
             return { referrer: this.el('Referrer').value, month: this.el('Month').value,
                 baseSalary: this.el('Base').value, allowance: this.el('Allowance').value, rate: this.el('Rate').value };
@@ -82,6 +163,6 @@
             this.el('Result').hidden = false;
         }
     }
-    root.ServiceSalary = { prepare, calculate, rules, Panel };
+    root.ServiceSalary = { prepare, calculate, rules, defaults, Panel };
     if (typeof module !== 'undefined' && module.exports) module.exports = root.ServiceSalary;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

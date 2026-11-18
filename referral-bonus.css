@@ -26,6 +26,20 @@
 .service-salary-rule { margin: 16px 0 0; padding: 12px 16px; background: var(--color-surface-alt, #f5f7fb); border-radius: var(--radius-md); font-size: 13px; line-height: 1.8; }
 .service-salary-rule strong { color: var(--color-primary, #2563eb); }
 .service-salary-formula { white-space: pre-line; }
+.service-salary-live { margin-bottom: 24px; padding: 22px; background: #f4f8ff; border: 1px solid #dbe7ff; border-radius: var(--radius-lg); }
+.service-salary-live-heading, .service-salary-live-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.service-salary-live-heading h3 { margin: 0; font-size: 16px; }
+.service-salary-month { border: 1px solid #dbe7ff; padding: 5px 10px; border-radius: 20px; font-size: 12px; color: var(--color-text-secondary); background: var(--color-surface); }
+.service-salary-live-metrics { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 20px; align-items: end; margin: 22px 0 16px; }
+.service-salary-live-metrics span { display: block; font-size: 12px; color: var(--color-text-secondary); }
+.service-salary-live-metrics strong { display: block; font-size: 25px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+#serviceSalaryLiveTotal { font-size: 38px; color: var(--color-primary, #2563eb); }
+.service-salary-live-breakdown { font-size: 13px; line-height: 1.8; margin: 0; overflow-wrap: anywhere; }
+.service-salary-live-footer { margin-top: 16px; border-top: 1px solid #dbe7ff; padding-top: 12px; }
+#serviceSalaryLiveStatus { font-size: 12px; line-height: 1.7; margin: 0; color: var(--color-text-secondary); }
+.service-salary-live[data-state="ready"] #serviceSalaryLiveStatus { color: #16764b; }
+.service-salary-live[data-state="error"] #serviceSalaryLiveStatus, .service-salary-live[data-state="invalid"] #serviceSalaryLiveStatus { color: var(--color-danger, #c43e3e); }
+.service-salary-live:not([data-state="ready"]) #serviceSalaryLiveTotal { color: var(--color-text-secondary); }
 @media (max-width: 1100px) {
     .service-salary-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -34,6 +48,9 @@
     .referral-bonus-form > .btn { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
+    .service-salary-live { padding: 16px; }
+    .service-salary-live-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .service-salary-live-metrics > div:first-child { grid-column: 1 / -1; }
     .referral-bonus { padding: 16px; }
     .referral-bonus-heading, .referral-bonus-summary { flex-direction: column; align-items: stretch; gap: 12px; }
     .referral-bonus-people { display: block; margin-left: 0; }

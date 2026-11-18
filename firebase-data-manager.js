@@ -860,7 +860,10 @@ class FirebaseDataManager {
             || session.uid !== this._currentUser?.uid || this._importing) return;
         const snapshot = session.snapshots.get(collectionName);
         const callback = session.callbacks[collectionName];
-        if (!snapshot || !callback || snapshot.metadata.pending) return;
+        if (!snapshot || !callback) return;
+        try { session.onMetadata?.(collectionName, { ...snapshot.metadata }); }
+        catch (error) { console.error('实时同步状态更新失败:', error); }
+        if (snapshot.metadata.pending) return;
         // Keep existing UI/cache during offline/partial snapshots. Employees
         // still receive metadata so their cloud-save readiness can be disabled.
         if (snapshot.metadata.fromCache && collectionName !== 'employees') return;
@@ -917,6 +920,7 @@ class FirebaseDataManager {
         for (const name of Object.keys(callbacks)) session.scopes[name] = options.scopes?.[name] || null;
         session.idleTimers ||= new Map();
         session.onError = options.onError;
+        session.onMetadata = options.onMetadata;
         clearTimeout(session.timer);
         session.timer = null;
         session.callbacks = callbacks;

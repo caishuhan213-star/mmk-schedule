@@ -96,7 +96,9 @@ class ModuleDataLoader {
             collections = [...ModuleDataLoader.dated];
         }
         const scopes = Object.fromEntries(collections.map(name => [name, ModuleDataLoader.dated.includes(name) ? ModuleDataLoader.monthsCovering(range) : null]));
-        return { tab, storeId: m.currentStoreId, uid: m.dbManager._currentUser?.uid, range, scopes };
+        const salaryMonth = tab === 'operating-cost' ? (m.serviceSalary?.currentMonth() || ModuleDataLoader.dateKey(new Date()).slice(0, 7)) : undefined;
+        if (salaryMonth) scopes.schedules = ModuleDataLoader.monthRange(salaryMonth);
+        return { tab, storeId: m.currentStoreId, uid: m.dbManager._currentUser?.uid, range, scopes, ...(salaryMonth ? { salaryMonth } : {}) };
     }
     setup() {
         const month = this.costMonth;
@@ -198,6 +200,7 @@ class ModuleDataLoader {
         if (!this.started || this.actionDepth || this.manager._recordSavePending || this.manager._dataActionPending) return;
         let plan;
         try { plan = this.plan(); } catch (error) { this.ready = false; this.status(error.message, false, true); return; }
+        this.manager.serviceSalary?.setLiveActive(plan.tab === 'operating-cost');
         const key = JSON.stringify(plan);
         if (!force && this.key === key) return;
         const generation = ++this.generation;
@@ -211,15 +214,24 @@ class ModuleDataLoader {
         const callbacks = {};
         const legacy = m._getSubscribeCallbacks();
         const names = Object.keys(plan.scopes);
+        const liveSalary = plan.tab === 'operating-cost';
+        const requiredNames = names.filter(name => !(liveSalary && name === 'schedules'));
+        if (liveSalary) m.serviceSalary?.beginLive(plan);
         for (const name of names) callbacks[name] = (data, metadata = {}) => {
             if (generation !== this.generation || plan.storeId !== m.currentStoreId) return;
             if (name === 'employees') legacy.employees(data, metadata);
             if (metadata.fromCache || metadata.pending) return;
+            if (liveSalary && name === 'schedules') { m.serviceSalary?.receiveLive(data, plan); return; }
             this.rows[name] = data;
-            if (names.every(n => Object.hasOwn(this.rows, n))) this.applyRows(plan, generation);
+            if (requiredNames.every(n => Object.hasOwn(this.rows, n))) this.applyRows(plan, generation);
         };
-        m.dbManager.subscribeToStore(plan.storeId, callbacks, { scopes: plan.scopes, onError: (error, collection) => {
+        m.dbManager.subscribeToStore(plan.storeId, callbacks, { scopes: plan.scopes, onMetadata: (collection, metadata) => {
+            if (generation !== this.generation || !liveSalary || collection !== 'schedules') return;
+            if (metadata.pending) m.serviceSalary?.liveState('pending');
+            else if (metadata.fromCache) m.serviceSalary?.liveState('offline');
+        }, onError: (error, collection) => {
             if (generation !== this.generation) return;
+            if (liveSalary && collection === 'schedules') { m.serviceSalary?.liveState('error', error); return; }
             delete this.rows[collection];
             this.ready = false; clearTimeout(this.slowTimer);
             const quota = String(error.code || '').includes('resource-exhausted');
