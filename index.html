@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=16">
     <link rel="stylesheet" href="employee-directory.css?v=6">
+    <link rel="stylesheet" href="referral-bonus.css?v=1">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1234,6 +1235,61 @@
 
         <!-- 运营成本管理页面 -->
         <div id="operating-cost-tab" class="tab-content">
+            <section class="oc-card referral-bonus" aria-labelledby="referralBonusTitle">
+                <div class="referral-bonus-heading">
+                    <div>
+                        <h2 id="referralBonusTitle">推荐人奖金</h2>
+                        <p>按上钟单数计算 · <span id="referralBonusStore">当前店铺</span></p>
+                    </div>
+                    <div class="referral-bonus-shortcuts" aria-label="奖金日期快捷选择">
+                        <button type="button" class="btn btn-secondary" id="referralBonusLastMonth">上月</button>
+                        <button type="button" class="btn btn-secondary" id="referralBonusThisMonth">本月截至今天</button>
+                    </div>
+                </div>
+                <form id="referralBonusForm" class="referral-bonus-form">
+                    <div class="form-group">
+                        <label for="referralBonusReferrer">推荐人</label>
+                        <select id="referralBonusReferrer" required><option value="圆圆">圆圆</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="referralBonusRate">每单奖金（元）</label>
+                        <input id="referralBonusRate" type="number" value="20" min="0" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="referralBonusStart">开始日期</label>
+                        <input id="referralBonusStart" type="date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="referralBonusEnd">结束日期</label>
+                        <input id="referralBonusEnd" type="date" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="referralBonusCalculate">计算奖金</button>
+                </form>
+                <p id="referralBonusStatus" class="referral-bonus-status" role="status" aria-live="polite">按员工当前推荐人归属统计，一条排班记录计一单。</p>
+                <div id="referralBonusResult" hidden>
+                    <div class="referral-bonus-summary">
+                        <div>
+                            <p id="referralBonusPeriod"></p>
+                            <strong id="referralBonusTotal"></strong>
+                            <p><span id="referralBonusOrders"></span><span class="referral-bonus-people" id="referralBonusPeople"></span></p>
+                        </div>
+                        <div class="referral-bonus-actions">
+                            <button type="button" class="btn btn-secondary" id="referralBonusRefresh">刷新重算</button>
+                            <button type="button" class="btn btn-secondary" id="referralBonusCopy">复制明细</button>
+                        </div>
+                    </div>
+                    <div class="referral-bonus-table-wrap" id="referralBonusTable">
+                        <table class="operating-cost-table">
+                            <thead><tr><th scope="col">员工</th><th scope="col">上钟单数</th><th scope="col">推荐奖金</th></tr></thead>
+                            <tbody id="referralBonusRows"></tbody>
+                        </table>
+                    </div>
+                    <p id="referralBonusEmpty" hidden>这位推荐人目前没有关联的员工。</p>
+                    <p id="referralBonusFormula" class="referral-bonus-formula"></p>
+                    <p id="referralBonusNotice" class="referral-bonus-status" hidden></p>
+                    <p class="referral-bonus-footnote">按员工当前推荐人归属统计，包含起止日期当天；计算结果供核对，尚未记入成本。</p>
+                </div>
+            </section>
             <div class="oc-layout">
                 <!-- 左列：录入 + 统计 -->
                 <aside class="oc-sidebar">
@@ -1903,9 +1959,10 @@
     <script src="employee-roster.js?v=4"></script>
     <script src="confirmed-query-cache.js?v=1"></script>
     <script src="firebase-data-manager.js?v=16"></script>
-    <script src="module-data-loader.js?v=3"></script>
+    <script src="module-data-loader.js?v=4"></script>
+    <script src="referral-bonus.js?v=1"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=46"></script>
+    <script src="script-clean.js?v=47"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

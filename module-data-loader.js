@@ -134,7 +134,10 @@ class ModuleDataLoader {
             }
             const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn btn-secondary'; retry.textContent = '重新加载';
             retry.addEventListener('click', () => this.refresh(true)); bar.append(retry);
-            panel.prepend(bar);
+            // Cost filters apply only to the existing cost records/charts. The
+            // referral calculator above them has its own explicit date range.
+            if (tab === 'operating-cost' && panel.querySelector('.oc-layout')) panel.querySelector('.oc-layout').before(bar);
+            else panel.prepend(bar);
         }
         this.setChartMonth(month);
         document.addEventListener('change', event => {
@@ -246,7 +249,7 @@ class ModuleDataLoader {
         this.ready = true; clearTimeout(this.slowTimer);
         const end = plan.range && new Date(plan.range.end + 'T00:00:00'); if (end) end.setDate(end.getDate() - 1);
         const label = plan.range ? `${plan.range.start} 至 ${ModuleDataLoader.dateKey(end)}` : '全部历史';
-        this.status(plan.tab === 'management' || plan.tab === 'data-convert' ? '员工名单与价格表同步' : plan.tab === 'ai-analysis' ? '生成分析时加载所选时间范围的数据' : `统计范围：${label}`);
+        this.status(plan.tab === 'management' || plan.tab === 'data-convert' ? '员工名单与价格表同步' : plan.tab === 'ai-analysis' ? '生成分析时加载所选时间范围的数据' : `${plan.tab === 'operating-cost' ? '成本统计范围' : '统计范围'}：${label}`);
         if (plan.tab === 'store-center') this.status(`统计范围：全部历史 · ${this.summaryCachedAt ? '浏览器缓存，更新于 ' + new Date(this.summaryCachedAt).toLocaleTimeString() : '已从云端更新'} · 缓存有效期 1 分钟，可点击重新加载更新`);
         if (plan.tab === 'schedule') { m.updateProjectSelectors(); m.renderTableWithCurrentFilter(); m.renderAttendanceFeeTable(); m.renderInterviewFeeTable(); m.updateStats(); }
         if (plan.tab === 'rebate') m.renderReportRebateTable();
