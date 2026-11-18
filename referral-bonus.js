@@ -38,12 +38,13 @@
         }
         const counts = new Map(all.filter(person => person.referrer === selected).map(person => [person.employeeId, { name: person.name, count: 0 }]));
         const seen = new Set(), unmatched = new Set();
-        let unmatchedCount = 0;
+        let unmatchedCount = 0, storeOrders = 0;
         for (const record of schedules) {
             if (record.scheduleDate < start || record.scheduleDate > end || !validDate(record.scheduleDate)) continue;
             const id = text(record.id);
             if (id && seen.has(id)) continue;
             if (id) seen.add(id);
+            storeOrders++;
             const name = text(record.employeeName), identity = text(record.employeeId || record.rosterId);
             let person = identity ? ids.get(identity) : exact.get(name);
             if (!identity && !person) {
@@ -60,13 +61,14 @@
         if (!Number.isSafeInteger(totalCents)) throw new Error('奖金合计金额过大，请缩小计算范围');
         const active = employees.filter(person => person.count);
         const formula = `${active.map(person => person.name + person.count).join(' ')}${active.length ? ' ' : ''}（${active.map(person => person.count).join('+') || '0'}）×${money(rateCents)}=${money(totalCents)}元`;
-        return { employees, totalOrders, totalCents, rateCents, formula, unmatchedCount, unmatchedNames: [...unmatched] };
+        return { employees, totalOrders, totalCents, rateCents, formula, storeOrders, unmatchedCount, unmatchedNames: [...unmatched] };
     }
 
     class Panel {
-        constructor(manager) {
+        constructor(manager, prefix = 'referralBonus') {
             this.manager = manager;
-            this.form = document.getElementById('referralBonusForm');
+            this.prefix = prefix;
+            this.form = this.el('Form');
             this.generation = 0;
             if (!this.form) return;
             this.form.addEventListener('submit', event => { event.preventDefault(); this.run(); });
@@ -80,7 +82,13 @@
             this.setMonth(0);
             this.sync();
         }
-        el(suffix) { return document.getElementById('referralBonus' + suffix); }
+        el(suffix) { return document.getElementById(this.prefix + suffix); }
+        get subject() { return '奖金'; }
+        get instructions() { return '按员工当前推荐人归属统计，一条排班记录计一单。'; }
+        prepare(values) { validate(values); return values; }
+        compute(values, schedules) {
+            return calculate({ ...values, rows: this.manager.jlLoadPriceTable(), referrers: this.manager._employeeReferrers, schedules });
+        }
         values() {
             return { referrer: this.el('Referrer').value, rate: this.el('Rate').value, start: this.el('Start').value, end: this.el('End').value };
         }
@@ -91,13 +99,13 @@
             this.el('End').value = ModuleDataLoader.dateKey(last);
             this.invalidate();
         }
-        invalidate(message = '选择推荐人、每单奖金和日期后，点击计算。') {
+        invalidate(message = this.instructions) {
             this.generation++;
             this.result = null;
             this.el('Result').hidden = true;
             this.el('Calculate').disabled = false;
             this.el('Refresh').disabled = false;
-            this.el('Calculate').textContent = '计算奖金';
+            this.el('Calculate').textContent = '计算' + this.subject;
             this.form.setAttribute('aria-busy', 'false');
             this.status(message);
         }
@@ -118,7 +126,7 @@
                 const option = document.createElement('option'); option.value = name; option.textContent = name; return option;
             }));
             if ([...select.options].some(option => option.value === previous)) select.value = previous;
-            this.invalidate(m._jlPriceReady ? '按员工当前推荐人归属统计，一条排班记录计一单。' : '正在连接员工名单，连接成功后即可计算。');
+            this.invalidate(m._jlPriceReady ? this.instructions : '正在连接员工名单，连接成功后即可计算。');
         }
         async run(force = false) {
             this.sync();
@@ -127,7 +135,7 @@
             const generation = this.generation, store = m.currentStoreId, uid = m.dbManager._currentUser?.uid;
             let timer;
             try {
-                validate(values);
+                const criteria = this.prepare(values);
                 if (!uid || !store || !m._jlPriceReady || m._jlPriceWritePending) throw new Error('员工名单尚未完成云端同步，请稍后再计算');
                 this.form.setAttribute('aria-busy', 'true');
                 this.el('Calculate').disabled = this.el('Refresh').disabled = true;
@@ -135,26 +143,26 @@
                 this.status('正在读取所选日期内的排班…');
                 let readAt = Date.now();
                 const schedules = await Promise.race([
-                    m.dbManager.readCollectionRange('schedules', store, { start: values.start, end: ModuleDataLoader.nextDay(values.end) }, {
+                    m.dbManager.readCollectionRange('schedules', store, { start: criteria.start, end: ModuleDataLoader.nextDay(criteria.end) }, {
                         cacheMaxAgeMs: 60000, force, onCache: time => { readAt = time; }
                     }),
                     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('排班读取超时，请检查网络后重试')), 20000); })
                 ]);
                 if (generation !== this.generation || store !== m.currentStoreId || uid !== m.dbManager._currentUser?.uid) return;
                 if (!m._jlPriceReady || m._jlPriceWritePending) throw new Error('员工名单正在更新，请稍后重新计算');
-                const result = calculate({ ...values, rows: m.jlLoadPriceTable(), referrers: m._employeeReferrers, schedules });
-                this.render(result, values);
+                const result = this.compute(criteria, schedules);
+                this.render(result, criteria);
                 this.status(`已计算 · 排班数据更新于 ${new Date(readAt).toLocaleTimeString('zh-CN')}；需要最新数据可点击“刷新重算”。`);
             } catch (error) {
                 if (generation !== this.generation || store !== m.currentStoreId || uid !== m.dbManager._currentUser?.uid) return;
                 this.status(String(error.code || '').includes('resource-exhausted')
-                    ? '云数据库额度受限，本次未能计算奖金，请额度恢复后重试。'
+                    ? `云数据库额度受限，本次未能计算${this.subject}，请额度恢复后重试。`
                     : `未能计算：${error.message || '请检查网络后重试'}`, true);
             } finally {
                 clearTimeout(timer);
                 if (generation === this.generation) {
                     this.el('Calculate').disabled = this.el('Refresh').disabled = false;
-                    this.el('Calculate').textContent = '计算奖金';
+                    this.el('Calculate').textContent = '计算' + this.subject;
                     this.form.setAttribute('aria-busy', 'false');
                 }
             }
@@ -182,7 +190,7 @@
         async copy() {
             if (!this.result) return;
             const value = `${this.el('Store').textContent} · ${this.el('Period').textContent}\n${this.result.formula}`;
-            try { await navigator.clipboard.writeText(value); this.status('奖金明细已复制。'); }
+            try { await navigator.clipboard.writeText(value); this.status(this.subject + '明细已复制。'); }
             catch (_) { this.status('未能自动复制，可选中下方明细算式手动复制。', true); }
         }
     }

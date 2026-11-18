@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=16">
     <link rel="stylesheet" href="employee-directory.css?v=6">
-    <link rel="stylesheet" href="referral-bonus.css?v=1">
+    <link rel="stylesheet" href="referral-bonus.css?v=2">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
@@ -1290,6 +1290,66 @@
                     <p class="referral-bonus-footnote">按员工当前推荐人归属统计，包含起止日期当天；计算结果供核对，尚未记入成本。</p>
                 </div>
             </section>
+            <section class="oc-card referral-bonus service-salary" aria-labelledby="serviceSalaryTitle">
+                <div class="referral-bonus-heading">
+                    <div>
+                        <h2 id="serviceSalaryTitle">客服工资</h2>
+                        <p>底薪 + 补贴 + 单量提成 + 推荐人奖金 · <span id="serviceSalaryStore">当前店铺</span></p>
+                    </div>
+                    <div class="referral-bonus-shortcuts" aria-label="工资月份快捷选择">
+                        <button type="button" class="btn btn-secondary" id="serviceSalaryLastMonth">上月</button>
+                        <button type="button" class="btn btn-secondary" id="serviceSalaryThisMonth">本月</button>
+                    </div>
+                </div>
+                <form id="serviceSalaryForm" class="referral-bonus-form service-salary-form">
+                    <div class="form-group">
+                        <label for="serviceSalaryReferrer">客服（推荐人）</label>
+                        <select id="serviceSalaryReferrer" required><option value="点点">点点</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="serviceSalaryMonth">工资月份</label>
+                        <input id="serviceSalaryMonth" type="month" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serviceSalaryBase">底薪（元）</label>
+                        <input id="serviceSalaryBase" type="number" value="3000" min="0" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serviceSalaryAllowance">补贴（元）</label>
+                        <input id="serviceSalaryAllowance" type="number" value="500" min="0" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serviceSalaryRate">推荐奖金（元/单）</label>
+                        <input id="serviceSalaryRate" type="number" value="20" min="0" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="serviceSalaryCalculate">计算工资</button>
+                </form>
+                <p class="service-salary-rule">单量提成：前200单 <strong>10元/单</strong>，仅超出200单的部分按 <strong>25元/单</strong>。</p>
+                <p id="serviceSalaryStatus" class="referral-bonus-status" role="status" aria-live="polite">按当前店铺整月总单量分段计提成，再加上该客服的推荐人奖金。</p>
+                <div id="serviceSalaryResult" hidden>
+                    <div class="referral-bonus-summary">
+                        <div>
+                            <p id="serviceSalaryPeriod"></p>
+                            <strong id="serviceSalaryTotal" class="service-salary-total"></strong>
+                            <p id="serviceSalaryOrders"></p>
+                        </div>
+                        <div class="referral-bonus-actions">
+                            <button type="button" class="btn btn-secondary" id="serviceSalaryRefresh">刷新重算</button>
+                            <button type="button" class="btn btn-secondary" id="serviceSalaryCopy">复制明细</button>
+                        </div>
+                    </div>
+                    <div class="referral-bonus-table-wrap">
+                        <table class="operating-cost-table">
+                            <thead><tr><th scope="col">工资项目</th><th scope="col">计算方式</th><th scope="col">金额</th></tr></thead>
+                            <tbody id="serviceSalaryRows"></tbody>
+                        </table>
+                    </div>
+                    <p id="serviceSalaryFormula" class="referral-bonus-formula service-salary-formula"></p>
+                    <p id="serviceSalaryNotice" class="referral-bonus-status" hidden></p>
+                    <p class="referral-bonus-footnote">一条排班记录计一单。推荐人奖金按员工当前推荐人归属计算，和单量提成分别相加。</p>
+                    <p id="serviceSalaryEstimate" class="referral-bonus-footnote"></p>
+                </div>
+            </section>
             <div class="oc-layout">
                 <!-- 左列：录入 + 统计 -->
                 <aside class="oc-sidebar">
@@ -1960,9 +2020,10 @@
     <script src="confirmed-query-cache.js?v=1"></script>
     <script src="firebase-data-manager.js?v=16"></script>
     <script src="module-data-loader.js?v=4"></script>
-    <script src="referral-bonus.js?v=1"></script>
+    <script src="referral-bonus.js?v=2"></script>
+    <script src="service-salary.js?v=1"></script>
     <script src="ai-analyst.js?v=3"></script>
-    <script src="script-clean.js?v=47"></script>
+    <script src="script-clean.js?v=48"></script>
     <script src="auth-guard.js?v=15"></script>
 </body>
 </html>

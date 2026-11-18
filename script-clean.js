@@ -698,6 +698,7 @@ class ScheduleManager {
         this.operatingCostTrendChart = null;
         this.dataLoader = new ModuleDataLoader(this);
         this.referralBonus = new ReferralBonus.Panel(this);
+        this.serviceSalary = new ServiceSalary.Panel(this);
         this.initializeEventListeners();
         // 默认筛选到今天，避免一次性渲染全部数据（1000+条很慢）
         const today = new Date().toISOString().split('T')[0];
@@ -1437,6 +1438,7 @@ class ScheduleManager {
         this.currentStore = store;
         this.dataKeyPrefix = `store_${storeId}_`;
         this.referralBonus?.sync();
+        this.serviceSalary?.sync();
         
         // 不刷新页面，避免 auth-guard 重新显示登录遮罩；直接切换数据上下文并重订阅。
         this.closeEmployeeModal();
@@ -4249,6 +4251,7 @@ ${photoStatus}`;
     _refreshEmployeeRoster() {
         this.employees = EmployeeRoster.reconcile(this.jlLoadPriceTable(), this._employeeProfiles || [], this._employeeReferrers);
         this.referralBonus?.sync();
+        this.serviceSalary?.sync();
         this.renderEmployeeList();
         this.updateEmployeeSelectors().catch(console.error);
         this.updateAttendanceFeeSelectors();
@@ -10477,6 +10480,7 @@ ${photoStatus}`;
             this._jlPriceReady = false;
             this._employeeSyncError = '连接失败，请检查网络或重新登录';
             this.referralBonus?.sync();
+            this.serviceSalary?.sync();
             this.renderEmployeeList();
             console.error(error);
         });
